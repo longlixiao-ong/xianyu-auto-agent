@@ -46,7 +46,7 @@ except Exception as e:
 admin_service = AdminService(bot, xianyuLive, xianyuLive.cards_manager,
                               env_path=".env", prompt_dir="prompts")
 admin_port = int(os.getenv("ADMIN_PORT", "18061"))
-start_admin_server(admin_service, host="0.0.0.0", port=admin_port, static_dir="admin_static")
+start_admin_server(admin_service, host="127.0.0.1", port=admin_port, static_dir="admin_static")
 logger.info(f"管理后台已启动: http://127.0.0.1:{admin_port}")
 
 # 启动客服主循环（Cookie 过期时会自动进入等待/重连逻辑，

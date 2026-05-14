@@ -94,9 +94,40 @@ class XianyuReplyBot:
         blocked_phrases = ["微信", "QQ", "支付宝", "银行卡", "线下"]
         return "[安全提醒]请通过平台沟通" if any(p in text for p in blocked_phrases) else text
 
+    # 图片域名白名单
+    ALLOWED_IMAGE_DOMAINS = {
+        "alicdn.com", "taobao.com", "tmall.com",
+        "goofish.com", "aliyuncs.com",
+    }
+    # 内网 IP 前缀
+    BLOCKED_IP_PREFIXES = ("127.", "10.", "192.168.", "169.254.", "::1", "[::1]")
+
+    @staticmethod
+    def _is_allowed_image_url(url: str) -> bool:
+        """校验图片 URL 是否在白名单内"""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            hostname = parsed.hostname or ""
+            # 检查内网地址
+            if hostname.startswith(XianyuReplyBot.BLOCKED_IP_PREFIXES):
+                logger.warning(f"拦截内网图片地址: {hostname}")
+                return False
+            # 检查域名白名单
+            for domain in XianyuReplyBot.ALLOWED_IMAGE_DOMAINS:
+                if hostname == domain or hostname.endswith("." + domain):
+                    return True
+            logger.warning(f"图片域名不在白名单: {hostname}")
+            return False
+        except Exception:
+            return False
+
     @staticmethod
     async def _download_image_as_base64(url: str, max_size: int = 3 * 1024 * 1024) -> str:
         """下载图片并转为 base64 data URI，失败返回空字符串"""
+        # 校验原始 URL
+        if not XianyuReplyBot._is_allowed_image_url(url):
+            return ""
         try:
             async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
                 # 先用 HEAD 检查大小
@@ -111,6 +142,12 @@ class XianyuReplyBot:
 
                 resp = await client.get(url)
                 resp.raise_for_status()
+
+                # 重定向后校验最终地址
+                final_url = str(resp.url)
+                if final_url != url and not XianyuReplyBot._is_allowed_image_url(final_url):
+                    logger.warning(f"重定向到非白名单地址: {final_url[:80]}")
+                    return ""
 
                 # 下载后检查大小
                 if len(resp.content) > max_size:

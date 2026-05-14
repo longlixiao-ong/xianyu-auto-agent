@@ -1,6 +1,8 @@
 import json
 import os
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from loguru import logger
@@ -10,6 +12,8 @@ class CardsManager:
 
     def __init__(self, db_path="data/chat_history.db"):
         self.db_path = db_path
+        self._locks_mutex = threading.Lock()
+        self._claim_locks = {}
         self._init_db()
 
     def _init_db(self):
@@ -81,15 +85,21 @@ class CardsManager:
         return sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
 
     @contextmanager
-    def _txn(self):
+    def _txn(self, retries=3):
         conn = self._connect()
-        try:
-            yield conn
-        except Exception:
-            conn.rollback()
-            raise
-        else:
-            conn.commit()
+        for attempt in range(retries):
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < retries - 1:
+                    conn.rollback()
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    conn.rollback()
+                    raise
         finally:
             conn.close()
 
@@ -303,27 +313,36 @@ class CardsManager:
 
     # ── 消耗（后续自动回复集成用） ─────────────────
 
+    def _get_item_lock(self, item_id):
+        """获取商品级别的锁，防止并发发货"""
+        with self._locks_mutex:
+            if item_id not in self._claim_locks:
+                self._claim_locks[item_id] = threading.Lock()
+            return self._claim_locks[item_id]
+
     def claim_one(self, item_id, chat_id):
         """原子取一张未用卡密并标记已用。固定模式直接返回内容。"""
         mode = self._get_delivery_mode(item_id)
         if mode == "fixed":
             return {"mode": "fixed", "content": self._get_fixed_content(item_id)}
-        try:
-            with self._txn() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE cards SET used = 1, chat_id = ?, used_at = ?, delivery_status = 0 "
-                    "WHERE id = (SELECT id FROM cards WHERE item_id = ? AND used = 0 LIMIT 1) "
-                    "RETURNING id, fields",
-                    (chat_id, datetime.now(timezone.utc).isoformat(), item_id)
-                )
-                row = cursor.fetchone()
-                if row:
-                    return {"mode": "stock", "id": row[0], "fields": json.loads(row[1])}
+        # 使用商品级锁防止并发重复发货
+        with self._get_item_lock(item_id):
+            try:
+                with self._txn() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE cards SET used = 1, chat_id = ?, used_at = ?, delivery_status = 0 "
+                        "WHERE id = (SELECT id FROM cards WHERE item_id = ? AND used = 0 LIMIT 1) "
+                        "RETURNING id, fields",
+                        (chat_id, datetime.now(timezone.utc).isoformat(), item_id)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        return {"mode": "stock", "id": row[0], "fields": json.loads(row[1])}
+                    return None
+            except Exception as e:
+                logger.error(f"取卡失败: {e}")
                 return None
-        except Exception as e:
-            logger.error(f"取卡失败: {e}")
-            return None
 
     def _get_delivery_mode(self, item_id):
         try:

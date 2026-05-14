@@ -4,6 +4,20 @@ from collections import deque
 from datetime import datetime
 
 
+# 脱敏正则
+_RE_COOKIE = re.compile(r"(cookie2|cna|t=|_tb_token_|sgcookie|csg|havana_lgc)[^;]{4,}", re.IGNORECASE)
+_RE_API_KEY = re.compile(r"(API_KEY|api_key|token)[=:]\s*[^\s,;]{8,}", re.IGNORECASE)
+_RE_CARD_FIELDS = re.compile(r"(卡密|密码|password|pass|pwd)[=:]\s*[^\s,;]{4,}", re.IGNORECASE)
+
+
+def _sanitize_log(text: str) -> str:
+    """对日志内容进行脱敏"""
+    text = _RE_COOKIE.sub(lambda m: m.group(1) + "***", text)
+    text = _RE_API_KEY.sub(lambda m: m.group(1) + "=***", text)
+    text = _RE_CARD_FIELDS.sub(lambda m: m.group(1) + "=***", text)
+    return text
+
+
 class AdminLogBuffer:
     """保留最近日志，给本地后台查看摘要。"""
 
@@ -13,10 +27,11 @@ class AdminLogBuffer:
 
     def sink(self, message):
         record = message.record
+        raw_msg = record["message"]
         entry = {
             "time": record["time"].strftime("%Y-%m-%d %H:%M:%S"),
             "level": record["level"].name,
-            "message": record["message"],
+            "message": _sanitize_log(raw_msg),
             "name": record["name"],
             "function": record["function"],
             "line": record["line"],

@@ -54,7 +54,7 @@ RUNTIME_CONFIG_DEFAULTS = {
     "MESSAGE_EXPIRE_TIME": "300000",
     "TOGGLE_KEYWORDS": "。",
     "SIMULATE_HUMAN_TYPING": "False",
-    "LOG_LEVEL": "DEBUG",
+    "LOG_LEVEL": "INFO",
     "MY_ITEMS_SNAPSHOT_ON_START": "False",
     "MY_ITEMS_SNAPSHOT_PATH": os.path.join("data", "dev_my_items.json"),
     "SELLING_ITEMS_SNAPSHOT_ON_START": "False",

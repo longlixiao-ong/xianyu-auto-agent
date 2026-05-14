@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import json
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from loguru import logger
@@ -153,15 +154,21 @@ class ChatContextManager:
         return sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
 
     @contextmanager
-    def _txn(self):
+    def _txn(self, retries=3):
         conn = self._connect()
-        try:
-            yield conn
-        except Exception:
-            conn.rollback()
-            raise
-        else:
-            conn.commit()
+        for attempt in range(retries):
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e) and attempt < retries - 1:
+                    conn.rollback()
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    conn.rollback()
+                    raise
         finally:
             conn.close()
         

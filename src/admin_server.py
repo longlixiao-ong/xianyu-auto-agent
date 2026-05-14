@@ -11,6 +11,9 @@ from loguru import logger
 
 MAX_QUERY_LIMIT = 500
 
+# 不需要鉴权的接口
+PUBLIC_ENDPOINTS = {"/api/status/overview", "/api/status/ping"}
+
 
 class AdminWSGIApp:
     """管理后台 WSGI 应用"""
@@ -27,16 +30,25 @@ class AdminWSGIApp:
         query = parse_qs(query_string)
 
         try:
-            if method == "GET":
-                status, headers, body = self._handle_get(path, query)
-            elif method == "PUT":
-                payload = self._read_body(environ)
-                status, headers, body = self._handle_put(path, payload, environ)
-            elif method == "POST":
-                payload = self._read_body(environ)
-                status, headers, body = self._handle_post(path, payload, environ)
-            elif method == "OPTIONS":
+            # OPTIONS 预检请求不鉴权
+            if method == "OPTIONS":
                 status, headers, body = self._handle_options()
+            # 所有 GET 请求不鉴权（本地 127.0.0.1 已足够安全）
+            elif method == "GET":
+                status, headers, body = self._handle_get(path, query)
+            # PUT/POST 写操作需要鉴权
+            elif method in ("PUT", "POST"):
+                ok, code, msg = self._check_auth(environ)
+                if not ok:
+                    status, headers, body = self._json_response(
+                        {"error": code, "message": msg}, HTTPStatus.UNAUTHORIZED
+                    )
+                elif method == "PUT":
+                    payload = self._read_body(environ)
+                    status, headers, body = self._handle_put(path, payload)
+                else:
+                    payload = self._read_body(environ)
+                    status, headers, body = self._handle_post(path, payload)
             else:
                 status, headers, body = self._json_response(
                     {"error": "method_not_allowed"}, HTTPStatus.METHOD_NOT_ALLOWED
@@ -94,20 +106,20 @@ class AdminWSGIApp:
         return status, headers, b""
 
     def _check_auth(self, environ):
-        """检查写操作授权"""
+        """检查授权"""
         expected = (os.environ.get("ADMIN_API_TOKEN") or "").strip()
         if not expected:
             return (
                 False,
                 "admin_token_missing",
-                "未配置环境变量 ADMIN_API_TOKEN，已拒绝写操作。请在 .env 中设置 ADMIN_API_TOKEN 后重启进程。",
+                "未配置环境变量 ADMIN_API_TOKEN，已拒绝操作。请在 .env 中设置 ADMIN_API_TOKEN 后重启进程。",
             )
         auth = (environ.get("HTTP_AUTHORIZATION") or "").strip()
         if not auth.lower().startswith("bearer "):
             return (
                 False,
                 "admin_auth_required",
-                "写操作需要请求头 Authorization: Bearer <与 .env 中 ADMIN_API_TOKEN 一致的值>",
+                "需要请求头 Authorization: Bearer <与 .env 中 ADMIN_API_TOKEN 一致的值>",
             )
         if auth[7:].strip() != expected:
             return (False, "admin_auth_forbidden", "管理接口令牌无效")
@@ -123,23 +135,13 @@ class AdminWSGIApp:
             return default
         return min(max(limit, 1), maximum)
 
-    def _inject_admin_token(self, html_text):
-        """注入 ADMIN_API_TOKEN 到 HTML"""
-        token = (os.environ.get("ADMIN_API_TOKEN") or "").strip()
-        snippet = f"<script>window.__ADMIN_API_TOKEN={json.dumps(token)};</script>"
-        marker = "<!--ADMIN_API_TOKEN_INJECT-->"
-        if marker in html_text:
-            return html_text.replace(marker, snippet, 1)
-        return html_text.replace("</head>", snippet + "\n</head>", 1)
-
     def _handle_get(self, path, query):
         """处理 GET 请求"""
         service = self.service
 
         if path == "/":
             index_path = self.static_dir / "index.html"
-            html = self._inject_admin_token(index_path.read_text(encoding="utf-8"))
-            return self._html_response(html)
+            return self._html_response(index_path.read_text(encoding="utf-8"))
 
         if path == "/api/status/overview":
             return self._json_response(service.get_overview())
@@ -211,12 +213,8 @@ class AdminWSGIApp:
 
         return self._json_response({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
-    def _handle_put(self, path, payload, environ):
+    def _handle_put(self, path, payload):
         """处理 PUT 请求"""
-        ok, code, msg = self._check_auth(environ)
-        if not ok:
-            return self._json_response({"error": code, "message": msg}, HTTPStatus.UNAUTHORIZED)
-
         service = self.service
         if path == "/api/config/models":
             return self._json_response(service.update_model_config(payload))
@@ -230,12 +228,8 @@ class AdminWSGIApp:
 
         return self._json_response({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
-    def _handle_post(self, path, payload, environ):
+    def _handle_post(self, path, payload):
         """处理 POST 请求"""
-        ok, code, msg = self._check_auth(environ)
-        if not ok:
-            return self._json_response({"error": code, "message": msg}, HTTPStatus.UNAUTHORIZED)
-
         service = self.service
         if path == "/api/ops/reload-prompts":
             return self._json_response(service.reload_prompts())
@@ -270,7 +264,7 @@ class AdminWSGIApp:
         return self._json_response({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
 
-def start_admin_server(service, host="0.0.0.0", port=18061, static_dir="admin_static"):
+def start_admin_server(service, host="127.0.0.1", port=18061, static_dir="admin_static"):
     """启动管理后台服务器（使用 waitress）"""
     app = AdminWSGIApp(service, static_dir)
 
@@ -280,5 +274,5 @@ def start_admin_server(service, host="0.0.0.0", port=18061, static_dir="admin_st
 
     thread = Thread(target=run_server, name="xianyu-admin-server", daemon=True)
     thread.start()
-    logger.info(f"本地后台已启动: http://127.0.0.1:{port}")
+    logger.info(f"本地后台已启动: http://{host}:{port}")
     return None, thread

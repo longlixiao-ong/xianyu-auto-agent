@@ -1,3 +1,4 @@
+import re
 import time
 from loguru import logger
 
@@ -6,7 +7,8 @@ class ManualModeMixin:
 
     def check_toggle_keywords(self, message):
         message_stripped = message.strip()
-        return message_stripped in self.toggle_keywords
+        keywords = [k.strip() for k in self.toggle_keywords.replace('，', ',').split(',') if k.strip()]
+        return message_stripped in keywords
 
     def is_manual_mode(self, chat_id):
         if chat_id not in self.manual_mode_conversations:

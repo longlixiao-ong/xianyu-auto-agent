@@ -177,7 +177,6 @@
     .detail-dl dd { margin: 2px 0 0; color: var(--text); word-break: break-word; }
     .zh-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: rgba(255,255,255,0.06); color: var(--muted); }
   </style>
-  <!--ADMIN_API_TOKEN_INJECT-->
 </head>
 <body>
   <div class="layout">
@@ -567,13 +566,7 @@
 
     async function api(path, options = {}) {
       const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-      if (typeof window.__ADMIN_API_TOKEN === "string" && window.__ADMIN_API_TOKEN.length > 0) {
-        headers["Authorization"] = "Bearer " + window.__ADMIN_API_TOKEN;
-      }
-      const res = await fetch(path, {
-        ...options,
-        headers,
-      });
+      const res = await fetch(path, { ...options, headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || "request failed");
       return data;
