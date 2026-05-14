@@ -984,7 +984,8 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                     # 启动商品列表定时刷新任务
                     self.items_refresh_task = asyncio.create_task(self.items_refresh_loop())
                     self._update_service_state("running", "客服运行中")
-                    self._service_started_at = time.time()
+                    if not self._service_started_at:
+                        self._service_started_at = time.time()
                     
                     async for message in websocket:
                         try:
