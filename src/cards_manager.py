@@ -232,19 +232,20 @@ class CardsManager:
         skipped_lines = []
         now = datetime.now(timezone.utc).isoformat()
 
-        for idx, line in enumerate(lines[1:], start=2):
-            values = [v.strip() for v in line.split("----")]
-            if len(values) != len(field_names):
-                skipped += 1
-                skipped_lines.append(f"第{idx}行: 字段数={len(values)}，期望={len(field_names)}")
-                continue
-            fields_json = json.dumps(
-                {field_names[i]: values[i] for i in range(len(field_names))},
-                ensure_ascii=False
-            )
-            try:
-                with self._txn() as conn:
-                    cursor = conn.cursor()
+        # 使用单个事务批量导入，提高性能
+        with self._txn() as conn:
+            cursor = conn.cursor()
+            for idx, line in enumerate(lines[1:], start=2):
+                values = [v.strip() for v in line.split("----")]
+                if len(values) != len(field_names):
+                    skipped += 1
+                    skipped_lines.append(f"第{idx}行: 字段数={len(values)}，期望={len(field_names)}")
+                    continue
+                fields_json = json.dumps(
+                    {field_names[i]: values[i] for i in range(len(field_names))},
+                    ensure_ascii=False
+                )
+                try:
                     # 检查是否已存在相同内容
                     cursor.execute(
                         "SELECT id FROM cards WHERE item_id = ? AND fields = ? AND used = 0",
@@ -258,11 +259,11 @@ class CardsManager:
                         "INSERT INTO cards (item_id, fields, created_at) VALUES (?, ?, ?)",
                         (item_id, fields_json, now)
                     )
-                imported += 1
-            except Exception as e:
-                skipped += 1
-                skipped_lines.append(f"第{idx}行: DB写入失败 ({e})")
-                logger.warning(f"导入单条卡密失败: {e}")
+                    imported += 1
+                except Exception as e:
+                    skipped += 1
+                    skipped_lines.append(f"第{idx}行: DB写入失败 ({e})")
+                    logger.warning(f"导入单条卡密失败: {e}")
 
         logger.info(f"商品 {item_id} 导入完成: {imported} 条, 跳过 {skipped} 条, 字段: {field_names}")
         if skipped_lines:
@@ -506,8 +507,8 @@ class CardsManager:
     def recover_stuck_deliveries(self, timeout_minutes=10):
         """恢复卡在发货中状态的记录，标记为失败并返回需要加入人工队列的信息"""
         try:
-            from datetime import datetime, timedelta
-            cutoff = (datetime.now() - timedelta(minutes=timeout_minutes)).isoformat()
+            from datetime import datetime, timedelta, timezone
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)).isoformat()
             with self._txn() as conn:
                 c = conn.cursor()
                 # 查找超时的发货中记录

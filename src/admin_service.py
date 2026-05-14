@@ -202,12 +202,13 @@ class AdminService:
         self.prompt_dir.mkdir(parents=True, exist_ok=True)
         path = self.prompt_dir / PROMPT_FILES[name]
         path.write_text(content, encoding="utf-8")
-        self.bot.reload_prompts()
+        if self.bot:
+            self.bot.reload_prompts()
         return {
             "status": "hot_applied",
             "changed": [name],
             "effects": {name: "hot_applied"},
-            "message": f"{name} 提示词已保存并热更新",
+            "message": f"{name} 提示词已保存" + ("并热更新" if self.bot else "，重启后生效"),
         }
 
     def reload_prompts(self):
