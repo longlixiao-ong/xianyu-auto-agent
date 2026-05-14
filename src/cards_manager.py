@@ -411,11 +411,11 @@ class CardsManager:
                     return None
             except Exception as e:
                 logger.error(f"取卡失败: {e}")
-                return None
+                raise
 
     def _get_delivery_mode(self, item_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 c = conn.cursor()
                 c.execute("SELECT delivery_mode FROM virtual_items WHERE item_id = ?", (item_id,))
                 r = c.fetchone()
@@ -430,7 +430,7 @@ class CardsManager:
 
     def _get_fixed_content(self, item_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 c = conn.cursor()
                 c.execute("SELECT fixed_content FROM virtual_items WHERE item_id = ?", (item_id,))
                 r = c.fetchone()

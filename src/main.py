@@ -406,6 +406,7 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                 )
             except Exception as se:
                 logger.error(f"发送库存不足通知失败: {se}")
+            self.cards_manager.update_delivery_job(chat_id, item_id, "failed", error="stock_out")
             self.enqueue_handoff(
                 chat_id=chat_id,
                 item_id=item_id,
@@ -430,6 +431,7 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                     self.cards_manager.mark_delivery_status(claimed["id"], False)
                 elif mode == "fixed":
                     self.cards_manager.record_fixed_delivery(item_id, chat_id, False)
+                self.cards_manager.update_delivery_job(chat_id, item_id, "failed", error="delivery_content_empty")
                 self.enqueue_handoff(
                     chat_id=chat_id,
                     item_id=item_id,
