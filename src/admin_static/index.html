@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>闲鱼自动客服后台</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --bg-elevated: #0c0c0f;
+      --surface: #111113;
+      --border: rgba(255, 255, 255, 0.06);
+      --border-strong: rgba(255, 255, 255, 0.12);
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --faint: #71717a;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.12);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --warn: #f59e0b;
+      --warn-bg: rgba(245, 158, 11, 0.12);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono: ui-monospace, "SF Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    .layout { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+    .sidebar {
+      background: var(--bg-elevated);
+      padding: 24px 16px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sidebar-brand { font-size: 13px; font-weight: 600; letter-spacing: -0.02em; color: var(--muted); margin: 0 0 8px 8px; text-transform: uppercase; }
+    .sidebar h1 { font-size: 15px; font-weight: 600; margin: 0 0 20px 8px; letter-spacing: -0.03em; color: var(--text); }
+    .nav { display: flex; flex-direction: column; gap: 2px; }
+    .nav button {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 10px 12px;
+      background: transparent; color: var(--muted);
+      border: none; border-radius: var(--radius-sm); text-align: left; cursor: pointer;
+      font-size: 13px; font-weight: 500; transition: background 0.12s, color 0.12s;
+    }
+    .nav button:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .nav button.active { background: rgba(255,255,255,0.08); color: var(--text); }
+    .content { padding: 28px 32px 48px; max-width: 1280px; }
+    .section { display: none; animation: fade 0.2s ease; }
+    .section.active { display: block; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    .page-title { font-size: 20px; font-weight: 600; letter-spacing: -0.04em; margin: 0 0 20px; }
+    .grid-dash { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+    .dash-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex; gap: 14px; align-items: flex-start;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .dash-card:hover { border-color: var(--border-strong); }
+    .dash-card.dash-ok { border-left: 3px solid var(--success); }
+    .dash-card.dash-warn { border-left: 3px solid var(--warn); }
+    .dash-card.dash-danger { border-left: 3px solid var(--danger); background: linear-gradient(135deg, var(--surface) 0%, rgba(239,68,68,0.06) 100%); }
+    .dash-card.dash-neutral { border-left: 3px solid var(--faint); }
+    .dash-icon { flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.04); color: var(--muted); }
+    .dash-card.dash-ok .dash-icon { background: var(--success-bg); color: var(--success); }
+    .dash-card.dash-danger .dash-icon { background: var(--danger-bg); color: var(--danger); }
+    .dash-card.dash-warn .dash-icon { background: var(--warn-bg); color: var(--warn); }
+    .dash-body { min-width: 0; flex: 1; }
+    .dash-label { font-size: 12px; color: var(--muted); font-weight: 500; margin-bottom: 4px; }
+    .dash-value { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; word-break: break-word; }
+    .dash-value.sub { font-size: 13px; font-weight: 500; color: var(--muted); }
+    .dash-value.danger-text { color: var(--danger); }
+    .dash-value.ok-text { color: var(--success); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+    .card h3 { margin: 0 0 16px; font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; }
+    .metric-label { font-size: 12px; color: var(--muted); }
+    .metric-value { font-size: 18px; margin-top: 8px; }
+    label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--muted); font-weight: 500; }
+    input, textarea {
+      width: 100%; padding: 10px 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--bg); color: var(--text);
+      font-family: inherit; font-size: 13px;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    textarea { min-height: 200px; resize: vertical; font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+    .cookie-box textarea { min-height: 120px; font-family: var(--mono); }
+    .cookie-box.risk-highlight textarea,
+    .cookie-box.risk-highlight { border-color: var(--danger) !important; box-shadow: 0 0 0 1px rgba(239,68,68,0.35); }
+    .cookie-box.risk-highlight { border-radius: var(--radius); }
+    .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+    button, .inline-btn {
+      padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid transparent;
+      cursor: pointer; background: var(--text); color: var(--bg); font-size: 13px; font-weight: 500;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:hover, .inline-btn:hover { opacity: 0.92; }
+    button:active, .inline-btn:active { transform: scale(0.98); }
+    button.secondary, .inline-btn.secondary { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--border-strong); }
+    button.danger { background: var(--danger); color: #fff; }
+    button.success { background: var(--success); color: #052e16; }
+    .status { font-size: 12px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+    .alert { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; border: 1px solid var(--border-strong); }
+    .alert-danger { background: var(--danger-bg); border-color: rgba(239,68,68,0.35); color: #fecaca; }
+    .alert-danger strong { display: block; margin-bottom: 6px; font-size: 13px; }
+    .service-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .service-badge { padding: 8px 14px; border-radius: 999px; font-weight: 600; font-size: 12px; border: 1px solid transparent; }
+    .service-running { background: var(--success-bg); color: var(--success); border-color: rgba(34,197,94,0.25); }
+    .service-stopped { background: var(--danger-bg); color: #fca5a5; border-color: rgba(239,68,68,0.25); }
+    .service-blocked { background: var(--warn-bg); color: var(--warn); border-color: rgba(245,158,11,0.3); }
+    .service-other { background: rgba(59,130,246,0.12); color: #93c5fd; border-color: rgba(59,130,246,0.25); }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border-radius: var(--radius-sm); padding: 10px; font-size: 11px; font-family: var(--mono); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .empty-row { text-align: center; color: var(--faint); padding: 24px; }
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+    .tabs button {
+      background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
+      padding: 10px 14px; margin-bottom: -1px; border-radius: 0; font-size: 13px; font-weight: 500;
+    }
+    .tabs button:hover { color: var(--text); }
+    .tabs button.active { color: var(--text); border-bottom-color: var(--text); }
+    .prompt-editor-wrap { margin-top: 8px; }
+    .prompt-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--faint); }
+    .save-toast {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
+      color: var(--success); opacity: 0; transform: translateY(6px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    .save-toast.show { opacity: 1; transform: translateY(0); }
+    details.runtime-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--bg); overflow: hidden; }
+    details.runtime-group summary {
+      cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 13px; color: var(--text);
+      list-style: none; display: flex; align-items: center; justify-content: space-between;
+      user-select: none;
+    }
+    details.runtime-group summary::-webkit-details-marker { display: none; }
+    details.runtime-group summary::after { content: "▾"; font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+    details.runtime-group[open] summary::after { transform: rotate(180deg); }
+    .runtime-group-body { padding: 0 14px 14px; display: grid; gap: 12px; }
+    .field-hint { font-size: 11px; color: var(--faint); margin-top: 4px; line-height: 1.4; }
+    .logs-panel {
+      height: 280px; overflow-y: auto; overflow-x: hidden;
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-family: var(--mono); font-size: 11px; line-height: 1.45; padding: 8px 0;
+    }
+    .log-line { padding: 4px 12px; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; gap: 8px; flex-wrap: wrap; }
+    .log-line:last-child { border-bottom: none; }
+    .log-time { color: var(--faint); flex-shrink: 0; }
+    .log-level { flex-shrink: 0; font-weight: 600; width: 52px; }
+    .log-msg { color: var(--muted); word-break: break-word; min-width: 0; flex: 1; }
+    .log-line.l-error .log-level { color: var(--danger); }
+    .log-line.l-error .log-msg { color: #fecaca; }
+    .log-line.l-info .log-level { color: var(--success); }
+    .log-line.l-info .log-msg { color: #bbf7d0; }
+    .log-line.l-debug .log-level { color: var(--faint); }
+    .log-line.l-debug .log-msg { color: var(--faint); }
+    .log-line.l-warn .log-level { color: var(--warn); }
+    .detail-dl { margin: 0; font-size: 12px; }
+    .detail-dl dt { color: var(--faint); margin-top: 8px; font-size: 11px; }
+    .detail-dl dt:first-child { margin-top: 0; }
+    .detail-dl dd { margin: 2px 0 0; color: var(--text); word-break: break-word; }
+    .zh-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: rgba(255,255,255,0.06); color: var(--muted); }
+  </style>
+  <!--ADMIN_API_TOKEN_INJECT-->
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <p class="sidebar-brand">Xianyu</p>
+      <h1>闲鱼客服后台</h1>
+      <div class="nav">
+        <button class="active" data-target="overview">总览</button>
+        <button data-target="models">模型</button>
+        <button data-target="prompts">提示词</button>
+        <button data-target="runtime">运行参数</button>
+        <button data-target="ops">运营操作</button>
+        <button data-target="review">人工队列</button>
+        <button data-target="cards">卡密管理</button>
+        <button data-target="delivery">发货记录</button>
+        <button data-target="messages">消息记录</button>
+      </div>
+    </aside>
+    <main class="content">
+      <section class="section active" id="overview">
+        <h2 class="page-title">仪表盘</h2>
+        <div id="risk-alert"></div>
+        <div class="service-bar">
+          <div id="service-badge" class="service-badge service-other">状态读取中</div>
+          <button id="service-start-btn" class="success" type="button" onclick="startService()">启动客服</button>
+          <button id="service-stop-btn" class="danger" type="button" onclick="stopService()">停止客服</button>
+          <span id="service-message" class="status" style="margin-top:0;"></span>
+        </div>
+        <div class="grid-dash" id="overview-cards"></div>
+      </section>
+
+      <section class="section" id="models">
+        <h2 class="page-title">模型</h2>
+        <div class="card">
+          <h3>模型配置</h3>
+          <div style="margin-bottom:16px;">
+            <label style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;cursor:pointer;">
+              <input type="radio" name="model-mode" value="single" checked onchange="onModelModeChange()"> 单一模型模式
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="radio" name="model-mode" value="split" onchange="onModelModeChange()"> 分模型模式
+            </label>
+            <div class="field-hint" style="margin-top:4px;">单一模式：文字和图片都用同一个多模态模型；分模型模式：文字和图片分别配置</div>
+          </div>
+
+          <!-- 单一模型模式 -->
+          <div id="single-model-area">
+            <div class="row">
+              <div><label>MODEL_BASE_URL</label><input id="model-base-url" autocomplete="off"></div>
+              <div><label>MODEL_NAME（多模态模型）</label><input id="model-name" autocomplete="off"></div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+              <div><label>API_KEY（留空表示不改）</label><input id="api-key" type="password" placeholder="仅在需要覆盖时填写" autocomplete="off"></div>
+              <div><label>API_KEY 状态</label><input id="api-key-status" disabled></div>
+            </div>
+          </div>
+
+          <!-- 分模型模式 -->
+          <div id="split-model-area" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
+                <div style="font-weight:600;margin-bottom:12px;color:var(--text);">文字模型</div>
+                <div><label>TEXT_MODEL_BASE_URL</label><input id="text-model-base-url" autocomplete="off"></div>
+                <div style="margin-top:8px;"><label>TEXT_MODEL_NAME</label><input id="text-model-name" autocomplete="off"></div>
+                <div style="margin-top:8px;"><label>TEXT_API_KEY（留空表示不改）</label><input id="text-api-key" type="password" placeholder="仅在需要覆盖时填写" autocomplete="off"></div>
+              </div>
+              <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
+                <div style="font-weight:600;margin-bottom:12px;color:var(--text);">视觉模型</div>
+                <div><label>VISION_MODEL_BASE_URL</label><input id="vision-model-base-url" autocomplete="off" oninput="onVisionModelInput()"></div>
+                <div style="margin-top:8px;"><label>VISION_MODEL_NAME</label><input id="vision-model-name" autocomplete="off" oninput="onVisionModelInput()"></div>
+                <div style="margin-top:8px;"><label>VISION_API_KEY（留空表示不改）</label><input id="vision-api-key" type="password" placeholder="仅在需要覆盖时填写" autocomplete="off"></div>
+                <div id="vision-model-hint" style="display:none;color:var(--warn);font-size:11px;margin-top:8px;">⚠ 未配置视觉模型，图片识别功能将关闭，买家发送的图片将无法被识别</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" onclick="saveModels()">保存并热切换</button>
+            <button type="button" class="secondary" onclick="loadModels()">重新读取</button>
+          </div>
+          <div class="status" id="models-status"></div>
+        </div>
+      </section>
+
+      <section class="section" id="prompts">
+        <h2 class="page-title">提示词</h2>
+        <div class="card">
+          <h3>提示词编辑</h3>
+          <div class="tabs" id="prompt-tabs"></div>
+          <div id="prompt-panels"></div>
+          <div class="actions">
+            <button type="button" onclick="saveActivePrompt()">保存当前标签</button>
+            <button type="button" class="secondary" onclick="reloadPrompts()">重新加载提示词</button>
+            <span class="save-toast" id="prompt-save-toast" aria-live="polite"><span>已保存</span><span>✓</span></span>
+          </div>
+          <div class="prompt-meta"><span id="prompt-char-count">0 字符</span></div>
+          <div class="status" id="prompts-status"></div>
+        </div>
+      </section>
+
+      <section class="section" id="runtime">
+        <h2 class="page-title">运行参数</h2>
+        <div class="card">
+          <h3>环境参数（热更新）</h3>
+          <div id="runtime-groups"></div>
+          <div class="actions">
+            <button type="button" onclick="saveRuntime()">保存并热更新</button>
+            <button type="button" class="secondary" onclick="reloadRuntime()">重新加载运行参数</button>
+          </div>
+          <div class="status" id="runtime-status"></div>
+        </div>
+      </section>
+
+      <section class="section" id="ops">
+        <h2 class="page-title">运营操作</h2>
+        <div class="card cookie-box" id="cookie-card">
+          <h3>更新 Cookie</h3>
+          <label>COOKIES_STR</label>
+          <textarea id="cookie-textarea" placeholder="粘贴最新 Cookie，保存后会写入 .env"></textarea>
+          <div class="actions">
+            <button type="button" onclick="saveCookie()">保存 Cookie</button>
+          </div>
+          <div class="status" id="cookie-status"></div>
+        </div>
+
+        <div class="card">
+          <h3>快捷操作</h3>
+          <div class="actions">
+            <button type="button" onclick="refreshItems()">立即刷新商品列表</button>
+            <button type="button" class="secondary" onclick="reloadPrompts()">重载提示词</button>
+            <button type="button" class="secondary" onclick="reloadRuntime()">重载运行参数</button>
+          </div>
+          <div class="row" style="margin-top:12px;">
+            <div>
+              <label>会话 ID</label>
+              <input id="manual-chat-id" placeholder="输入 chat_id" autocomplete="off">
+            </div>
+            <div style="align-self:end;">
+              <button type="button" class="inline-btn" onclick="toggleManualMode()">切换人工/自动</button>
+            </div>
+          </div>
+          <div class="status" id="ops-status"></div>
+        </div>
+
+        <div class="card">
+          <h3>商品列表预览</h3>
+          <table>
+            <thead><tr><th>商品 ID</th><th>标题</th><th>价格</th></tr></thead>
+            <tbody id="items-preview-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>日志摘要</h3>
+          <div class="actions">
+            <button type="button" class="secondary" onclick="clearLogsView()">清空显示</button>
+          </div>
+          <div class="logs-panel" id="logs-view"></div>
+        </div>
+      </section>
+
+      <section class="section" id="review">
+        <h2 class="page-title">人工队列</h2>
+        <div class="card">
+          <h3>人工待处理</h3>
+          <table><thead><tr><th>会话</th><th>商品</th><th>原因</th><th>更新时间</th><th>详情</th></tr></thead><tbody id="manual-review-body"></tbody></table>
+        </div>
+        <div class="card">
+          <h3>最近运行态</h3>
+          <table><thead><tr><th>会话</th><th>商品</th><th>购买状态</th><th>回复决策</th><th>更新时间</th><th>详情</th></tr></thead><tbody id="runtime-state-body"></tbody></table>
+        </div>
+        <div class="card">
+          <h3>最近图片观察</h3>
+          <table><thead><tr><th>会话</th><th>更新时间</th><th>图片</th><th>观察</th></tr></thead><tbody id="image-observation-body"></tbody></table>
+        </div>
+      </section>
+      <section class="section" id="cards">
+        <div class="card"><h3>虚拟商品绑定</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
+            <label>商品ID:<br><input id="bind-item-id" placeholder="闲鱼商品ID"></label>
+            <label>备注:<br><input id="bind-item-label" placeholder="选填"></label>
+            <label>发货模式:<br><select id="bind-delivery-mode" onchange="onDeliveryModeChange()">
+              <option value="stock">库存模式</option>
+              <option value="fixed">固定内容模式</option>
+            </select></label>
+            <button onclick="registerVirtualItem()">注册</button>
+          </div>
+          <div id="bind-fixed-area" style="display:none">
+            <textarea id="bind-fixed-content" rows="3" placeholder="所有买家收到相同内容，例如网盘链接、统一说明" style="width:100%;font-size:12px"></textarea>
+          </div>
+          <table style="margin-top:12px"><thead><tr><th>商品ID</th><th>备注</th><th>发货模式</th><th>库存</th><th>剩余</th><th>操作</th></tr></thead><tbody id="virtual-items-body"></tbody></table>
+        </div>
+        <div class="card" id="cards-detail-area" style="display:none"><h3>凭证管理 — <span id="cards-detail-title"></span></h3>
+          <div id="cards-fixed-editor" style="display:none;margin-bottom:12px">
+            <textarea id="cards-fixed-textarea" rows="4" placeholder="输入固定发货内容" style="width:100%;font-size:12px"></textarea>
+            <button onclick="saveFixedContent()">保存固定内容</button><span id="fixed-save-result" style="margin-left:8px;font-size:12px"></span>
+          </div>
+          <div id="cards-stock-ops" style="display:none">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <button onclick="showImportArea()">批量导入</button>
+            <button onclick="loadCardsStock()">刷新库存</button>
+            <button onclick="loadCardsList()">查看明细</button>
+          </div>
+          <div id="import-area" style="display:none;margin-bottom:12px">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px">第一行定义字段名，后续每行一条数据，字段用 <b>----</b> 分隔</div>
+            <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">
+              <button class="secondary" onclick="fillTemplate('卡密')" style="font-size:11px;padding:3px 8px">📋 卡密</button>
+              <button class="secondary" onclick="fillTemplate('账号+密码')" style="font-size:11px;padding:3px 8px">👤 账号+密码</button>
+              <button class="secondary" onclick="fillTemplate('网盘链接')" style="font-size:11px;padding:3px 8px">🔗 网盘链接</button>
+            </div>
+            <textarea id="import-text" rows="6" placeholder="第一行=字段名(用----分隔)&#10;后续行=数据&#10;&#10;例:&#10;账号----密码&#10;abc@gmail.com----pass123&#10;xyz@gmail.com----pass789" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+            <button onclick="importCards()">导入</button><span id="import-result" style="margin-left:8px;font-size:12px"></span>
+          </div>
+          <div id="stock-area"><table><thead><tr><th>商品ID</th><th>字段</th><th>总数</th><th>剩余</th><th>已用</th></tr></thead><tbody id="stock-body"></tbody></table></div>
+          <div id="cards-list-area" style="margin-top:12px">
+            <label style="margin-right:8px">状态:<select id="cards-used-filter" onchange="loadCardsList()"><option value="">全部</option><option value="0">未用</option><option value="1">已用</option></select></label>
+            <table><thead><tr><th>ID</th><th>内容</th><th>状态</th><th>时间</th></tr></thead><tbody id="cards-list-body"></tbody></table>
+          </div>
+          </div>
+        </div>
+      </section>
+      <section class="section" id="delivery">
+        <h2 class="page-title">发货记录</h2>
+        <div class="card">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+            <label>商品ID:<br><input id="dlv-filter-item" placeholder="留空查全部" style="width:150px"></label>
+            <button onclick="loadDeliveryLog()">查询</button>
+            <button class="secondary" onclick="document.getElementById('dlv-filter-item').value='';loadDeliveryLog()">显示全部</button>
+          </div>
+          <table><thead><tr><th>时间</th><th>商品ID</th><th>备注</th><th>会话ID</th><th>模式</th><th>状态</th></tr></thead><tbody id="delivery-log-body"></tbody></table>
+        </div>
+      </section>
+      <section class="section" id="messages">
+        <h2 class="page-title">消息记录</h2>
+        <div class="card">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+            <label>商品ID:<br><input id="msg-filter-item" placeholder="留空查全部" style="width:150px"></label>
+            <button onclick="loadConversations()">查询</button>
+            <button class="secondary" onclick="document.getElementById('msg-filter-item').value='';loadConversations()">显示全部</button>
+          </div>
+          <table><thead><tr><th>会话ID</th><th>商品ID</th><th>消息数</th><th>最后消息</th><th></th></tr></thead><tbody id="conversations-body"></tbody></table>
+        </div>
+        <div class="card" id="msg-detail-area" style="display:none"><h3>会话详情 — <span id="msg-detail-title"></span></h3>
+          <button onclick="closeMsgDetail()" class="secondary" style="margin-bottom:8px">← 返回列表</button>
+          <div id="msg-detail-body"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const runtimeKeys = [
+      "HEARTBEAT_INTERVAL","HEARTBEAT_TIMEOUT","TOKEN_REFRESH_INTERVAL","TOKEN_RETRY_INTERVAL",
+      "ITEMS_REFRESH_INTERVAL","MANUAL_MODE_TIMEOUT","MESSAGE_EXPIRE_TIME","TOGGLE_KEYWORDS",
+      "SIMULATE_HUMAN_TYPING","LOG_LEVEL","MY_ITEMS_SNAPSHOT_ON_START","MY_ITEMS_SNAPSHOT_PATH",
+      "SELLING_ITEMS_SNAPSHOT_ON_START","SELLING_ITEMS_SNAPSHOT_PATH","LEGACY_SELLING_ITEMS_SNAPSHOT_PATH",
+      "SELLING_ITEMS_BROWSER_HEADLESS","RISK_CONTROL_RETRY_INTERVAL"
+    ];
+
+    const RUNTIME_GROUPS = [
+      {
+        title: "连接",
+        keys: ["HEARTBEAT_INTERVAL","HEARTBEAT_TIMEOUT","TOKEN_REFRESH_INTERVAL","TOKEN_RETRY_INTERVAL","RISK_CONTROL_RETRY_INTERVAL"],
+      },
+      {
+        title: "商品",
+        keys: ["ITEMS_REFRESH_INTERVAL","MY_ITEMS_SNAPSHOT_ON_START","MY_ITEMS_SNAPSHOT_PATH","SELLING_ITEMS_SNAPSHOT_ON_START","SELLING_ITEMS_SNAPSHOT_PATH","LEGACY_SELLING_ITEMS_SNAPSHOT_PATH","SELLING_ITEMS_BROWSER_HEADLESS"],
+      },
+      {
+        title: "会话",
+        keys: ["MANUAL_MODE_TIMEOUT","MESSAGE_EXPIRE_TIME","TOGGLE_KEYWORDS","SIMULATE_HUMAN_TYPING"],
+      },
+      {
+        title: "调试",
+        keys: ["LOG_LEVEL"],
+      },
+    ];
+
+    const RUNTIME_HINTS = {
+      HEARTBEAT_INTERVAL: "向闲鱼发送心跳的间隔（秒）。",
+      HEARTBEAT_TIMEOUT: "超过该时间未收到心跳应答则视为异常（秒）。",
+      TOKEN_REFRESH_INTERVAL: "自动刷新登录 Token 的间隔（秒）。",
+      TOKEN_RETRY_INTERVAL: "Token 刷新失败后的重试间隔（秒）。",
+      ITEMS_REFRESH_INTERVAL: "在售商品列表自动刷新间隔（秒）。",
+      MANUAL_MODE_TIMEOUT: "会话进入人工模式后，超时自动恢复自动回复（秒）。",
+      MESSAGE_EXPIRE_TIME: "判定消息过期、可清理的时间窗口（秒）。",
+      TOGGLE_KEYWORDS: "用户消息命中这些关键词时，在人工/自动间切换（格式依后端约定）。",
+      SIMULATE_HUMAN_TYPING: "是否开启模拟人工输入延迟（true/false）。",
+      LOG_LEVEL: "日志级别，如 DEBUG / INFO / WARNING / ERROR。",
+      MY_ITEMS_SNAPSHOT_ON_START: "启动时是否加载「我的商品」快照（true/false）。",
+      MY_ITEMS_SNAPSHOT_PATH: "主商品归属快照文件路径。",
+      SELLING_ITEMS_SNAPSHOT_ON_START: "启动时是否加载在售商品快照（true/false）。",
+      SELLING_ITEMS_SNAPSHOT_PATH: "在售商品快照输出路径。",
+      LEGACY_SELLING_ITEMS_SNAPSHOT_PATH: "旧版在售快照路径（兼容迁移）。",
+      SELLING_ITEMS_BROWSER_HEADLESS: "抓取在售列表时浏览器是否无头模式（true/false）。",
+      RISK_CONTROL_RETRY_INTERVAL: "被风控拦截后的自动重试间隔（秒）。",
+    };
+
+    const PROMPT_TABS = [
+      { id: "classify", label: "分类", field: "classify" },
+      { id: "price", label: "议价", field: "price" },
+      { id: "tech", label: "技术问答", field: "tech" },
+      { id: "default", label: "通用客服", field: "default" },
+    ];
+    let activePromptId = "classify";
+    let logsCleared = false;
+    let lastOverview = null;
+
+    function initPromptUi() {
+      const tabs = document.getElementById("prompt-tabs");
+      const panels = document.getElementById("prompt-panels");
+      tabs.innerHTML = PROMPT_TABS.map(t => `
+        <button type="button" data-prompt-tab="${t.id}" class="${t.id === activePromptId ? "active" : ""}">${t.label}</button>
+      `).join("");
+      panels.innerHTML = PROMPT_TABS.map(t => `
+        <div class="prompt-editor-wrap" data-prompt-panel="${t.id}" style="display:${t.id === activePromptId ? "block" : "none"}">
+          <label>内容</label>
+          <textarea id="prompt-${t.id}" data-prompt-name="${t.field}" spellcheck="false"></textarea>
+        </div>
+      `).join("");
+      tabs.querySelectorAll("[data-prompt-tab]").forEach(btn => {
+        btn.addEventListener("click", () => setPromptTab(btn.getAttribute("data-prompt-tab")));
+      });
+      PROMPT_TABS.forEach(t => {
+        const ta = document.getElementById(`prompt-${t.id}`);
+        ta.addEventListener("input", () => { if (t.id === activePromptId) updatePromptCharCount(); });
+      });
+      updatePromptCharCount();
+    }
+
+    function setPromptTab(id) {
+      activePromptId = id;
+      document.querySelectorAll("[data-prompt-tab]").forEach(b => b.classList.toggle("active", b.getAttribute("data-prompt-tab") === id));
+      document.querySelectorAll("[data-prompt-panel]").forEach(p => {
+        p.style.display = p.getAttribute("data-prompt-panel") === id ? "block" : "none";
+      });
+      updatePromptCharCount();
+    }
+
+    function getActivePromptTextarea() {
+      return document.getElementById(`prompt-${activePromptId}`);
+    }
+
+    function updatePromptCharCount() {
+      const ta = getActivePromptTextarea();
+      const n = (ta && ta.value) ? ta.value.length : 0;
+      document.getElementById("prompt-char-count").textContent = `${n.toLocaleString()} 字符`;
+    }
+
+    function flashPromptSaved() {
+      const el = document.getElementById("prompt-save-toast");
+      el.classList.remove("show");
+      void el.offsetWidth;
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), 2200);
+    }
+
+    function initRuntimeGroups() {
+      const host = document.getElementById("runtime-groups");
+      const keySet = new Set(runtimeKeys);
+      const parts = RUNTIME_GROUPS.map((g, idx) => {
+        const keys = g.keys.filter(k => keySet.has(k));
+        const fields = keys.map(key => `
+          <div>
+            <label>${key}</label>
+            <input id="runtime-${key}" autocomplete="off">
+            <div class="field-hint">${escapeHtml(RUNTIME_HINTS[key] || "")}</div>
+          </div>
+        `).join("");
+        return `
+          <details class="runtime-group" ${idx === 0 ? "open" : ""}>
+            <summary><span>${escapeHtml(g.title)}</span><span style="font-size:11px;font-weight:500;color:var(--faint);">${keys.length} 项</span></summary>
+            <div class="runtime-group-body">${fields}</div>
+          </details>
+        `;
+      }).join("");
+      host.innerHTML = parts;
+    }
+
+    document.querySelectorAll(".nav button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".nav button").forEach(x => x.classList.remove("active"));
+        document.querySelectorAll(".section").forEach(x => x.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.target).classList.add("active");
+      });
+    });
+
+    async function api(path, options = {}) {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (typeof window.__ADMIN_API_TOKEN === "string" && window.__ADMIN_API_TOKEN.length > 0) {
+        headers["Authorization"] = "Bearer " + window.__ADMIN_API_TOKEN;
+      }
+      const res = await fetch(path, {
+        ...options,
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "request failed");
+      return data;
+    }
+
+    function renderStatus(id, message) {
+      document.getElementById(id).textContent = message || "";
+    }
+
+    function escapeHtml(text) {
+      return String(text ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    const ICONS = {
+      link: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+      cpu: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
+      box: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+      shield: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+      pulse: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+      key: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>',
+      eye: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+      clock: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    };
+
+    function parseLocalDateTime(s) {
+      if (!s || typeof s !== "string") return null;
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+      if (!m) return null;
+      return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    }
+
+    function formatRelativeMinutes(dt) {
+      if (!dt || isNaN(dt.getTime())) return { text: "未建立", bad: true };
+      const sec = Math.floor((Date.now() - dt.getTime()) / 1000);
+      if (sec < 45) return { text: "刚刚", bad: false };
+      const min = Math.floor(sec / 60);
+      if (min < 60) return { text: `${min} 分钟前`, bad: min > 10 };
+      const h = Math.floor(min / 60);
+      if (h < 48) return { text: `${h} 小时前`, bad: true };
+      const d = Math.floor(h / 24);
+      return { text: `${d} 天前`, bad: true };
+    }
+
+    function renderTableBody(elementId, rows, mapper, emptyText, colspan) {
+      const body = document.getElementById(elementId);
+      const span = colspan || 6;
+      if (!rows || rows.length === 0) {
+        body.innerHTML = `<tr><td class="empty-row" colspan="${span}">${emptyText}</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map(mapper).join("");
+    }
+
+    const STATUS_LABELS = {
+      risk_control_blocked: "风控阻塞",
+      missing: "状态文件缺失",
+      read_error: "读取失败",
+      not_purchased: "未购买",
+      suspected_purchased: "疑似已购",
+      confirmed_purchased: "已确认购买",
+      reply: "正常回复",
+      no_reply: "不回复",
+      handoff: "转人工",
+      running: "运行中",
+      stopped: "已停止",
+      blocked: "已阻塞",
+      connecting: "连接中",
+      reconnecting: "重连中",
+      starting: "启动中",
+      error: "异常",
+      purchase_detected: "检测到购买",
+      confirmed_purchase_text: "文案确认已购",
+      suspected_purchase_text: "文案疑似已购",
+      system_waiting_seller_ship: "系统：待卖家发货",
+      system_waiting_buyer_pay: "系统：待买家付款",
+      system_trade_closed: "系统：交易关闭",
+    };
+
+    function zhStatus(v) {
+      if (v == null || v === "") return "-";
+      return STATUS_LABELS[v] || v;
+    }
+
+    const DETAIL_KEY_LABELS = {
+      message: "消息",
+      reason: "原因",
+      action: "动作",
+      purchase_status: "购买状态",
+      reply_decision: "回复决策",
+      last_reason: "最近原因",
+      purchase_confidence: "置信度",
+      image_urls: "图片链接",
+      user_msg: "用户消息",
+      item_id: "商品 ID",
+      chat_id: "会话 ID",
+      red_reminder: "订单状态提醒",
+      observation: "观察说明",
+      source: "来源",
+      user_url: "用户链接",
+      last_user_message: "最近用户消息",
+      has_image: "含图片",
+      purchase_reason: "购买识别原因",
+    };
+
+    function zhConfidence(v) {
+      const m = { high: "高", medium: "中", low: "低" };
+      return m[v] || v;
+    }
+
+    function translateDetailValue(key, val) {
+      if (typeof val !== "string") return null;
+      if (key === "purchase_status") return zhStatus(val);
+      if (key === "reply_decision") return zhStatus(val);
+      if (key === "purchase_confidence") return zhConfidence(val);
+      if (key === "reason" || key === "last_reason" || key === "purchase_reason") {
+        const z = zhStatus(val);
+        return z !== val ? z : val;
+      }
+      return null;
+    }
+
+    function detailsToReadableHtml(obj) {
+      if (obj == null) return `<span class="zh-badge">无</span>`;
+      if (typeof obj !== "object") return `<span>${escapeHtml(String(obj))}</span>`;
+      if (Array.isArray(obj)) {
+        if (obj.length === 0) return `<span class="zh-badge">空列表</span>`;
+        return `<ul style="margin:0;padding-left:18px;color:var(--muted);">${obj.map(x => `<li>${escapeHtml(typeof x === "object" ? JSON.stringify(x) : String(x))}</li>`).join("")}</ul>`;
+      }
+      const rows = Object.keys(obj).map(k => {
+        const raw = obj[k];
+        const label = DETAIL_KEY_LABELS[k] || k;
+        let display;
+        if (raw === null || raw === undefined) {
+          display = `<span class="zh-badge">空</span>`;
+        } else if (typeof raw === "boolean") {
+          display = escapeHtml(raw ? "是" : "否");
+        } else {
+          const tr = translateDetailValue(k, raw);
+          if (tr == null) {
+            if (typeof raw === "object")
+              display = detailsToReadableHtml(raw);
+            else
+              display = escapeHtml(String(raw));
+          } else {
+            display = escapeHtml(tr);
+          }
+        }
+        return `<dt>${escapeHtml(label)}</dt><dd>${display}</dd>`;
+      }).join("");
+      return `<dl class="detail-dl">${rows}</dl>`;
+    }
+
+    function cardHtml(iconName, label, valueHtml, variant, valueClass) {
+      const vcls = valueClass ? ` ${valueClass}` : "";
+      return `
+        <div class="dash-card dash-${variant}">
+          <div class="dash-icon">${ICONS[iconName] || ICONS.pulse}</div>
+          <div class="dash-body">
+            <div class="dash-label">${escapeHtml(label)}</div>
+            <div class="dash-value${vcls}">${valueHtml}</div>
+          </div>
+        </div>`;
+    }
+
+    let uptimeAnchor = { seconds: 0, at: Date.now(), running: false };
+    let uptimeTimer = null;
+    let wasRunning = false;
+
+    function formatUptime(seconds) {
+      if (seconds < 1) return "0秒";
+      if (seconds < 60) return `${Math.floor(seconds)}秒`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}分${Math.floor(seconds % 60)}秒`;
+      const d = Math.floor(seconds / 86400);
+      const h = Math.floor((seconds % 86400) / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      return d > 0 ? `${d}天${h}时${m}分` : `${h}时${m}分`;
+    }
+
+    function uptimeTicker() {
+      if (!uptimeAnchor.running) return;
+      const elapsed = Math.floor((Date.now() - uptimeAnchor.at) / 1000);
+      const total = uptimeAnchor.seconds + elapsed;
+      const el = document.getElementById("uptime-card");
+      if (el) el.textContent = formatUptime(total);
+    }
+
+    function renderOverview(data) {
+      lastOverview = data;
+      const live = data.live || {};
+      const runtime = data.runtime_status || {};
+      const snapshot = data.snapshot || {};
+      const models = data.models || {};
+      const riskBlocked = (runtime.status || "") === "risk_control_blocked";
+      const cookieCard = document.getElementById("cookie-card");
+      if (cookieCard) cookieCard.classList.toggle("risk-highlight", riskBlocked);
+
+      const hbStr = live.last_heartbeat_response;
+      const hbDt = parseLocalDateTime(hbStr);
+      const hbRel = formatRelativeMinutes(hbDt);
+      const hbBad = riskBlocked || live.service_state === "blocked" || live.service_state === "error" || hbRel.bad || !hbStr;
+
+      const tokenOk = live.current_token_ready;
+      const tokenBad = riskBlocked || !tokenOk;
+
+      const riskLabel = zhStatus(runtime.status) !== runtime.status ? zhStatus(runtime.status) : (runtime.status || "-");
+
+      const cards = [];
+      cards.push(cardHtml("link", "模型地址", escapeHtml(models.MODEL_BASE_URL || "-"), "neutral", ""));
+      cards.push(cardHtml("cpu", "当前模型", escapeHtml(models.MODEL_NAME || "-"), "neutral", ""));
+      cards.push(cardHtml("cpu", "文本 / 视觉", `${escapeHtml(models.TEXT_MODEL_NAME || "-")} · ${escapeHtml(models.VISION_MODEL_NAME || "-")}`, "neutral", "sub"));
+      cards.push(cardHtml("key", "Token 状态", tokenOk ? "已获取" : (riskBlocked ? "已阻塞" : "未获取"), tokenBad ? "danger" : "ok", tokenBad ? "danger-text" : "ok-text"));
+      cards.push(cardHtml("pulse", "上次心跳应答", hbRel.text, hbBad ? "danger" : "ok", hbBad ? "danger-text" : ""));
+      cards.push(cardHtml("box", "商品数", escapeHtml(String(snapshot.item_count ?? 0)), "neutral", ""));
+      cards.push(cardHtml("shield", "风险状态", escapeHtml(riskLabel), riskBlocked ? "danger" : "ok", riskBlocked ? "danger-text" : ""));
+
+      const uptime = live.uptime_seconds || 0;
+      const isRunning = live.service_state === "running";
+      // 服务重启（从停止变为运行）时重置锚点
+      if (isRunning && !wasRunning) {
+        uptimeAnchor = { seconds: 0, at: Date.now(), running: true };
+      } else {
+        uptimeAnchor = { seconds: uptime, at: Date.now(), running: isRunning };
+      }
+      wasRunning = isRunning;
+      if (!uptimeTimer) uptimeTimer = setInterval(uptimeTicker, 1000);
+      cards.push(cardHtml("clock", "运行时长", `<span id="uptime-card">${escapeHtml(formatUptime(uptime))}</span>`, isRunning ? "ok" : "neutral", ""));
+
+      document.getElementById("overview-cards").innerHTML = cards.join("");
+
+      const alert = document.getElementById("risk-alert");
+      if (riskBlocked) {
+        alert.innerHTML = `
+          <div class="alert alert-danger">
+            <strong>风险状态：风控阻塞</strong>
+            <div>${escapeHtml(runtime.message || "闲鱼当前风控拦截，客服无法正常连上。")}</div>
+            <div style="margin-top:8px;">请前往「运营操作」更新 Cookie，然后点击「启动客服」重连。</div>
+          </div>
+        `;
+      } else {
+        alert.innerHTML = "";
+      }
+
+      const badge = document.getElementById("service-badge");
+      const state = live.service_state || "unknown";
+      const stateMap = {
+        running: ["service-running", "运行中"],
+        stopped: ["service-stopped", "已停止"],
+        blocked: ["service-blocked", "已阻塞"],
+        connecting: ["service-other", "连接中"],
+        reconnecting: ["service-other", "重连中"],
+        starting: ["service-other", "启动中"],
+        error: ["service-stopped", "异常"],
+      };
+      const [clazz, text] = stateMap[state] || ["service-other", state];
+      badge.className = `service-badge ${clazz}`;
+      badge.textContent = text;
+      document.getElementById("service-message").textContent = live.service_message || "";
+    }
+
+    async function loadOverview() {
+      const data = await api("/api/status/overview");
+      renderOverview(data);
+      renderItemsPreview((data.snapshot && data.snapshot.items) || []);
+    }
+
+    async function loadModels() {
+      const data = await api("/api/config/models");
+      // 单一模式字段
+      document.getElementById("model-base-url").value = data.MODEL_BASE_URL || "";
+      document.getElementById("model-name").value = data.MODEL_NAME || "";
+      document.getElementById("api-key").value = "";
+      document.getElementById("api-key-status").value = data.API_KEY_CONFIGURED ? "已配置" : "未配置";
+      // 分模型字段
+      document.getElementById("text-model-base-url").value = data.TEXT_MODEL_BASE_URL || "";
+      document.getElementById("text-model-name").value = data.TEXT_MODEL_NAME || "";
+      document.getElementById("text-api-key").value = "";
+      document.getElementById("vision-model-base-url").value = data.VISION_MODEL_BASE_URL || "";
+      document.getElementById("vision-model-name").value = data.VISION_MODEL_NAME || "";
+      document.getElementById("vision-api-key").value = "";
+      // 自动判断模式
+      if (data.TEXT_MODEL_BASE_URL || data.VISION_MODEL_BASE_URL) {
+        setModelMode("split");
+      } else {
+        setModelMode("single");
+      }
+      onVisionModelInput();
+    }
+
+    function setModelMode(mode) {
+      document.querySelector(`input[name="model-mode"][value="${mode}"]`).checked = true;
+      onModelModeChange();
+    }
+
+    function onModelModeChange() {
+      const mode = document.querySelector('input[name="model-mode"]:checked').value;
+      const isSingle = mode === "single";
+      document.getElementById("single-model-area").style.display = isSingle ? "block" : "none";
+      document.getElementById("split-model-area").style.display = isSingle ? "none" : "block";
+      if (!isSingle) onVisionModelInput();
+    }
+
+    function onVisionModelInput() {
+      const mode = document.querySelector('input[name="model-mode"]:checked')?.value;
+      if (mode !== "split") return;
+      const visionUrl = document.getElementById("vision-model-base-url").value.trim();
+      const visionName = document.getElementById("vision-model-name").value.trim();
+      const hint = document.getElementById("vision-model-hint");
+      hint.style.display = (visionUrl || visionName) ? "none" : "block";
+    }
+
+    async function saveModels() {
+      try {
+        const mode = document.querySelector('input[name="model-mode"]:checked').value;
+        let payload;
+        if (mode === "single") {
+          const baseUrl = document.getElementById("model-base-url").value;
+          const modelName = document.getElementById("model-name").value;
+          const apiKey = document.getElementById("api-key").value;
+          payload = {
+            MODEL_BASE_URL: baseUrl,
+            MODEL_NAME: modelName,
+            TEXT_MODEL_NAME: modelName,
+            VISION_MODEL_NAME: modelName,
+            TEXT_MODEL_BASE_URL: "",
+            VISION_MODEL_BASE_URL: "",
+            TEXT_API_KEY: "",
+            VISION_API_KEY: "",
+            API_KEY: apiKey
+          };
+        } else {
+          payload = {
+            MODEL_BASE_URL: "",
+            MODEL_NAME: "",
+            TEXT_MODEL_BASE_URL: document.getElementById("text-model-base-url").value,
+            TEXT_MODEL_NAME: document.getElementById("text-model-name").value,
+            TEXT_API_KEY: document.getElementById("text-api-key").value,
+            VISION_MODEL_BASE_URL: document.getElementById("vision-model-base-url").value,
+            VISION_MODEL_NAME: document.getElementById("vision-model-name").value,
+            VISION_API_KEY: document.getElementById("vision-api-key").value,
+            API_KEY: ""
+          };
+        }
+        const data = await api("/api/config/models", { method: "PUT", body: JSON.stringify(payload) });
+        renderStatus("models-status", data.message || data.status);
+        await loadOverview();
+        await loadModels();
+      } catch (err) {
+        renderStatus("models-status", err.message);
+      }
+    }
+
+    async function loadPrompts() {
+      const data = await api("/api/prompts");
+      PROMPT_TABS.forEach(t => {
+        const el = document.getElementById(`prompt-${t.id}`);
+        if (el) el.value = data[t.field] || "";
+      });
+      updatePromptCharCount();
+    }
+
+    async function saveActivePrompt() {
+      const tab = PROMPT_TABS.find(x => x.id === activePromptId);
+      if (!tab) return;
+      const value = document.getElementById(`prompt-${tab.id}`).value;
+      try {
+        const data = await api(`/api/prompts/${tab.field}`, { method: "PUT", body: JSON.stringify({ content: value }) });
+        renderStatus("prompts-status", data.message || data.status);
+        flashPromptSaved();
+      } catch (err) {
+        renderStatus("prompts-status", err.message);
+      }
+    }
+
+    async function reloadPrompts() {
+      try {
+        const data = await api("/api/ops/reload-prompts", { method: "POST", body: "{}" });
+        renderStatus("prompts-status", data.message || data.status);
+        renderStatus("ops-status", data.message || data.status);
+      } catch (err) {
+        renderStatus("prompts-status", err.message);
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    async function loadRuntime() {
+      const data = await api("/api/config/runtime");
+      runtimeKeys.forEach(key => {
+        const el = document.getElementById(`runtime-${key}`);
+        if (el) el.value = data[key] ?? "";
+      });
+    }
+
+    async function saveRuntime() {
+      try {
+        const payload = {};
+        runtimeKeys.forEach(key => payload[key] = document.getElementById(`runtime-${key}`).value);
+        const data = await api("/api/config/runtime", { method: "PUT", body: JSON.stringify(payload) });
+        renderStatus("runtime-status", data.message || data.status);
+        await loadOverview();
+      } catch (err) {
+        renderStatus("runtime-status", err.message);
+      }
+    }
+
+    async function reloadRuntime() {
+      try {
+        const data = await api("/api/ops/reload-runtime", { method: "POST", body: "{}" });
+        renderStatus("runtime-status", data.message || data.status);
+        renderStatus("ops-status", data.message || data.status);
+        await loadOverview();
+      } catch (err) {
+        renderStatus("runtime-status", err.message);
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    async function saveCookie() {
+      try {
+        const payload = { COOKIES_STR: document.getElementById("cookie-textarea").value.trim() };
+        const data = await api("/api/config/secrets", { method: "PUT", body: JSON.stringify(payload) });
+        document.getElementById("cookie-textarea").value = "";
+        renderStatus("cookie-status", data.message || data.status);
+      } catch (err) {
+        renderStatus("cookie-status", err.message);
+      }
+    }
+
+    async function startService() {
+      try {
+        const data = await api("/api/ops/service/start", { method: "POST", body: "{}" });
+        renderStatus("ops-status", data.message || data.status);
+        await loadOverview();
+      } catch (err) {
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    async function stopService() {
+      try {
+        const data = await api("/api/ops/service/stop", { method: "POST", body: "{}" });
+        renderStatus("ops-status", data.message || data.status);
+        await loadOverview();
+      } catch (err) {
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    async function refreshItems() {
+      try {
+        const data = await api("/api/ops/refresh-items", { method: "POST", body: "{}" });
+        renderStatus("ops-status", `${data.message}，当前 ${data.item_count} 个商品`);
+        renderItemsPreview(data.items || []);
+        await loadOverview();
+      } catch (err) {
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    function renderItemsPreview(items) {
+      renderTableBody(
+        "items-preview-body",
+        items,
+        item => `<tr><td>${escapeHtml(item.item_id || "-")}</td><td>${escapeHtml(item.title || "-")}</td><td>${escapeHtml(item.price || "-")}</td></tr>`,
+        "暂无商品记录",
+        3
+      );
+    }
+
+    async function toggleManualMode() {
+      try {
+        const chatId = document.getElementById("manual-chat-id").value.trim();
+        const data = await api("/api/ops/manual-mode", { method: "POST", body: JSON.stringify({ chat_id: chatId }) });
+        renderStatus("ops-status", data.message || data.status);
+      } catch (err) {
+        renderStatus("ops-status", err.message);
+      }
+    }
+
+    function logLevelClass(level) {
+      const u = (level || "").toUpperCase();
+      if (u === "ERROR" || u === "CRITICAL") return "l-error";
+      if (u === "INFO" || u === "SUCCESS") return "l-info";
+      if (u === "DEBUG" || u === "TRACE") return "l-debug";
+      if (u === "WARNING" || u === "WARN") return "l-warn";
+      return "";
+    }
+
+    async function loadLogs() {
+      if (logsCleared) return;
+      const data = await api("/api/status/logs?limit=120");
+      const items = (data.items || []).slice().reverse();
+      const html = items.map(x => {
+        const lv = escapeHtml(x.level || "");
+        const cls = logLevelClass(x.level);
+        return `<div class="log-line ${cls}"><span class="log-time">${escapeHtml(x.time || "")}</span><span class="log-level">${lv}</span><span class="log-msg">${escapeHtml(x.message || "")}</span></div>`;
+      }).join("");
+      document.getElementById("logs-view").innerHTML = html || `<div class="log-line"><span class="log-msg">暂无日志</span></div>`;
+    }
+
+    function clearLogsView() {
+      logsCleared = true;
+      document.getElementById("logs-view").innerHTML = "";
+      setTimeout(() => { logsCleared = false; }, 0);
+    }
+
+    async function loadReview() {
+      const manual = await api("/api/review/manual-review");
+      renderTableBody(
+        "manual-review-body",
+        manual.items,
+        item => `<tr>
+          <td>${escapeHtml(item.chat_id || "-")}</td>
+          <td>${escapeHtml(item.item_id || "-")}</td>
+          <td><span class="zh-badge">${escapeHtml(zhStatus(item.reason))}</span></td>
+          <td>${escapeHtml(item.updated_at || "-")}</td>
+          <td>${detailsToReadableHtml(item.details || {})}</td>
+        </tr>`,
+        "暂无人工待处理记录",
+        5
+      );
+
+      const states = await api("/api/review/runtime-states?limit=50");
+      renderTableBody(
+        "runtime-state-body",
+        states.items,
+        item => `<tr>
+          <td>${escapeHtml(item.chat_id || "-")}</td>
+          <td>${escapeHtml(item.item_id || "-")}</td>
+          <td>${escapeHtml(zhStatus(item.purchase_status))}</td>
+          <td>${escapeHtml(zhStatus(item.reply_decision))}</td>
+          <td>${escapeHtml(item.last_updated || "-")}</td>
+          <td>${detailsToReadableHtml(item.details || {})}</td>
+        </tr>`,
+        "暂无运行态记录",
+        6
+      );
+
+      const observations = await api("/api/review/image-observations?limit=50");
+      renderTableBody(
+        "image-observation-body",
+        observations.items,
+        item => `<tr>
+          <td>${escapeHtml(item.chat_id || "-")}</td>
+          <td>${escapeHtml(item.last_updated || "-")}</td>
+          <td>${detailsToReadableHtml(item.image_urls || [])}</td>
+          <td><pre style="margin:0;border:none;background:transparent;padding:0;">${escapeHtml(item.observation || "")}</pre></td>
+        </tr>`,
+        "暂无图片观察记录",
+        4
+      );
+    }
+
+    // ── 卡密管理 ─────────────────────────────────────────────
+
+    let selectedCardsItemId = "";
+
+    function maskPassword(val) {
+      if (typeof val !== "string") return val;
+      if (val.length <= 4) return "***";
+      return val.slice(0, 2) + "***" + val.slice(-2);
+    }
+
+    function isPasswordField(key) {
+      return /密码|password|pass|pwd/i.test(key);
+    }
+
+    function formatFields(fields) {
+      return Object.entries(fields || {}).map(([k, v]) =>
+        `<b>${escapeHtml(k)}:</b> ${isPasswordField(k) ? maskPassword(v) : escapeHtml(v)}`
+      ).join(" &nbsp;");
+    }
+
+    async function loadVirtualItems() {
+      const data = await api("/api/cards/virtual-items");
+      const tbody = document.getElementById("virtual-items-body");
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="6">暂无已注册的虚拟商品</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.items.map(it => {
+        const safeItemId = escapeHtml(it.item_id);
+        const safeLabel = escapeHtml(it.label || "");
+        const safeMode = escapeHtml(it.delivery_mode);
+        const safeFixed = escapeHtml(it.fixed_content || "");
+        return `<tr>
+        <td>${safeItemId}</td><td>${safeLabel || "-"}</td>
+        <td>${it.delivery_mode === "fixed" ? "📝 固定" : "📦 库存"}</td>
+        <td>${it.total}</td><td>${it.delivery_mode === "fixed" ? "—" : it.available}</td>
+        <td><button onclick="selectCardsItem('${safeItemId}','${safeLabel.replace(/'/g,"\\'")}','${safeMode}','${safeFixed.replace(/'/g,"\\'").replace(/\n/g,"\\n")}')">管理</button>
+        <button onclick="unregisterVirtualItem('${safeItemId}')" style="margin-left:4px">移除</button></td>
+      </tr>`}).join("");
+    }
+
+    async function registerVirtualItem() {
+      const itemId = document.getElementById("bind-item-id").value.trim();
+      const label = document.getElementById("bind-item-label").value.trim();
+      const mode = document.getElementById("bind-delivery-mode").value;
+      const fixedContent = document.getElementById("bind-fixed-content").value.trim();
+      if (!itemId) return alert("请输入商品ID");
+      try {
+        await api("/api/cards/virtual-items", { method: "POST", body: JSON.stringify({
+          item_id: itemId, label, delivery_mode: mode, fixed_content: fixedContent
+        })});
+        document.getElementById("bind-item-id").value = "";
+        document.getElementById("bind-item-label").value = "";
+        document.getElementById("bind-fixed-content").value = "";
+        document.getElementById("bind-delivery-mode").value = "stock";
+        onDeliveryModeChange();
+        loadVirtualItems();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function unregisterVirtualItem(itemId) {
+      if (!confirm(`确认移除虚拟商品 ${itemId}？已有凭证保留但不可再导入。`)) return;
+      try {
+        await api("/api/cards/virtual-items/delete", { method: "POST", body: JSON.stringify({ item_id: itemId }) });
+        if (selectedCardsItemId === itemId) { selectedCardsItemId = ""; document.getElementById("cards-detail-area").style.display = "none"; }
+        loadVirtualItems();
+      } catch (e) { alert(e.message); }
+    }
+
+    function selectCardsItem(itemId, label, deliveryMode, fixedContent) {
+      selectedCardsItemId = itemId;
+      document.getElementById("cards-detail-area").style.display = "block";
+      document.getElementById("cards-detail-title").textContent = `${itemId}${label ? " (" + decodeURIComponent(label) + ")" : ""}`;
+      document.getElementById("import-area").style.display = "none";
+
+      const isFixed = deliveryMode === "fixed";
+      document.getElementById("cards-fixed-editor").style.display = isFixed ? "block" : "none";
+      document.getElementById("cards-stock-ops").style.display = isFixed ? "none" : "block";
+      document.getElementById("stock-area").style.display = isFixed ? "none" : "block";
+      document.getElementById("cards-list-area").style.display = isFixed ? "none" : "block";
+
+      if (isFixed) {
+        document.getElementById("cards-fixed-textarea").value = decodeURIComponent(fixedContent || "");
+      } else {
+        loadCardsStock();
+        loadCardsList();
+      }
+    }
+
+    function onDeliveryModeChange() {
+      const mode = document.getElementById("bind-delivery-mode").value;
+      document.getElementById("bind-fixed-area").style.display = mode === "fixed" ? "block" : "none";
+    }
+
+    async function saveFixedContent() {
+      if (!selectedCardsItemId) return alert("请先选择商品");
+      const content = document.getElementById("cards-fixed-textarea").value;
+      try {
+        await api("/api/cards/fixed-content", { method: "POST", body: JSON.stringify({ item_id: selectedCardsItemId, content }) });
+        document.getElementById("fixed-save-result").textContent = "已保存";
+        setTimeout(() => { document.getElementById("fixed-save-result").textContent = ""; }, 2000);
+      } catch (e) { alert(e.message); }
+    }
+
+    async function loadDeliveryLog() {
+      const itemId = document.getElementById("dlv-filter-item")?.value?.trim() || "";
+      const url = itemId ? `/api/cards/delivery-log?item_id=${encodeURIComponent(itemId)}&limit=100` : "/api/cards/delivery-log?limit=100";
+      const data = await api(url);
+      const tbody = document.getElementById("delivery-log-body");
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="6">暂无发货记录</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.items.map(it => {
+        let statusBadge;
+        if (it.delivery_ok) statusBadge = '<span style="color:#27ae60">✅ 成功</span>';
+        else if (it.delivery_ok === false) statusBadge = '<span style="color:#e74c3c">❌ 失败</span>';
+        else statusBadge = '<span style="color:#f39c12">⏳ 待确认</span>';
+        return `<tr>
+        <td>${escapeHtml((it.used_at || "").slice(0, 16))}</td>
+        <td>${escapeHtml(it.item_id)}</td>
+        <td>${escapeHtml(it.label || "-")}</td>
+        <td>${escapeHtml(it.chat_id || "-")}</td>
+        <td>${it.delivery_mode === "fixed" ? "📝 固定" : "📦 库存"}</td>
+        <td>${statusBadge}</td>
+      </tr>`}).join("");
+    }
+
+    function showImportArea() {
+      document.getElementById("import-area").style.display = "block";
+    }
+
+    function fillTemplate(type) {
+      const tpls = {
+        "卡密": "卡密\nABCD-1234-EFGH",
+        "账号+密码": "账号----密码\nabc@gmail.com----pass123",
+        "网盘链接": "链接----提取码\nhttps://pan.quark.cn/s/xxx----abcd",
+      };
+      const el = document.getElementById("import-text");
+      el.value = (tpls[type] || "");
+      showImportArea();
+      el.focus();
+    }
+
+    async function importCards() {
+      if (!selectedCardsItemId) return alert("请先选择商品");
+      const rawText = document.getElementById("import-text").value;
+      if (!rawText.trim()) return alert("请输入卡密数据");
+      try {
+        const res = await api("/api/cards/import", { method: "POST", body: JSON.stringify({ item_id: selectedCardsItemId, raw_text: rawText }) });
+        document.getElementById("import-result").textContent = `成功导入 ${res.imported_count} 条${res.skipped_count ? ", 跳过 " + res.skipped_count + " 条" : ""}, 字段: ${res.fields.join(", ")}`;
+        if (res.skipped_lines && res.skipped_lines.length > 0) {
+          document.getElementById("import-result").textContent += " | 跳过: " + res.skipped_lines.slice(0, 5).join("; ");
+        }
+        document.getElementById("import-text").value = "";
+        loadCardsStock();
+        loadVirtualItems();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function loadCardsStock() {
+      if (!selectedCardsItemId) return;
+      const data = await api(`/api/cards/stock?item_id=${encodeURIComponent(selectedCardsItemId)}`);
+      const tbody = document.getElementById("stock-body");
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="5">暂无凭证</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.items.map(it => {
+        let warn = "";
+        if (it.available === 0) warn = `<span style="color:#e74c3c;font-weight:600">❌ 库存不足，请补货</span>`;
+        else if (it.available <= 3) warn = `<span style="color:#f39c12;font-weight:600">⚠ 即将售罄</span>`;
+        return `<tr>
+        <td>${escapeHtml(it.item_id)}</td><td>${escapeHtml((it.fields||[]).join(","))}</td>
+        <td>${it.total}</td><td>${it.available} ${warn}</td><td>${it.used}</td>
+      </tr>`}).join("");
+    }
+
+    async function loadCardsList() {
+      if (!selectedCardsItemId) return;
+      const usedFilter = document.getElementById("cards-used-filter").value;
+      let url = `/api/cards/list?item_id=${encodeURIComponent(selectedCardsItemId)}`;
+      if (usedFilter !== "") url += `&used=${usedFilter}`;
+      const data = await api(url + "&limit=200");
+      const tbody = document.getElementById("cards-list-body");
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="4">暂无记录</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.items.map(it => `<tr>
+        <td>${it.id}</td>
+        <td>${formatFields(it.fields)}</td>
+        <td style="color:${it.used?'var(--muted)':'var(--green)'}">${it.used?'已用('+(it.used_at||'').slice(0,10)+')':'未用'}</td>
+        <td>${(it.created_at||'').slice(0,16)}</td>
+      </tr>`).join("");
+    }
+
+    // ── 消息记录 ─────────────────────────────────────────────
+
+    async function loadConversations() {
+      const itemId = document.getElementById("msg-filter-item")?.value?.trim() || "";
+      const url = itemId ? `/api/messages/conversations?item_id=${encodeURIComponent(itemId)}&limit=100` : "/api/messages/conversations?limit=100";
+      const data = await api(url);
+      const tbody = document.getElementById("conversations-body");
+      if (!data.items || !data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="5">暂无会话记录</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.items.map(it => {
+        let badges = "";
+        if (it.auto_delivered) badges += ' <span style="color:#27ae60;font-size:11px">✅ 已自动发货</span>';
+        const safeChatId = escapeHtml(it.chat_id);
+        const safeItemId = escapeHtml(it.item_id || "");
+        return `<tr style="cursor:pointer" onclick="showMsgDetail('${safeChatId}','${safeItemId}')">
+          <td>${safeChatId}</td><td>${safeItemId || "-"}</td>
+          <td>${it.message_count} ${badges}</td>
+          <td>${escapeHtml((it.last_message_at || "").slice(0, 16))}</td>
+          <td><button class="secondary" style="font-size:11px;padding:2px 6px">查看</button></td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function showMsgDetail(chatId, itemId) {
+      document.getElementById("conversations-body").closest(".card").style.display = "none";
+      document.getElementById("msg-detail-area").style.display = "block";
+      document.getElementById("msg-detail-title").textContent = `${chatId} / 商品 ${itemId}`;
+      const data = await api(`/api/messages/detail?chat_id=${encodeURIComponent(chatId)}&limit=200`);
+      const msgs = data.messages || [];
+      if (!msgs.length) {
+        document.getElementById("msg-detail-body").innerHTML = '<p>暂无消息</p>';
+        return;
+      }
+      document.getElementById("msg-detail-body").innerHTML = msgs.map(m => {
+        const isUser = m.role === "user";
+        const color = isUser ? "#4a90d9" : "#27ae60";
+        const label = isUser ? "买家" : "AI客服";
+        return `<div style="margin-bottom:8px;padding:8px;border-left:3px solid ${color};background:var(--card-bg)">
+          <div style="font-size:11px;margin-bottom:4px">
+            <span style="color:${color};font-weight:600">${label}</span>
+            <span style="color:var(--muted);margin-left:8px">${(m.timestamp||"").slice(0,19)}</span>
+          </div>
+          <div style="white-space:pre-wrap;word-break:break-word">${escapeHtml(m.content)}</div>
+        </div>`;
+      }).join("");
+      document.getElementById("msg-detail-body").scrollTop = document.getElementById("msg-detail-body").scrollHeight;
+    }
+
+    function closeMsgDetail() {
+      document.getElementById("conversations-body").closest(".card").style.display = "block";
+      document.getElementById("msg-detail-area").style.display = "none";
+    }
+
+    async function boot() {
+      initRuntimeGroups();
+      initPromptUi();
+      try {
+        await Promise.all([loadOverview(), loadModels(), loadPrompts(), loadRuntime(), loadLogs(), loadReview(), loadVirtualItems(), loadDeliveryLog(), loadConversations()]);
+      } catch (e) {
+        console.error("boot failed:", e);
+      }
+      // 确保定时器始终创建
+      if (!uptimeTimer) uptimeTimer = setInterval(uptimeTicker, 1000);
+    }
+
+    boot();
+    setInterval(loadOverview, 30000);
+    setInterval(loadLogs, 5000);
+    setInterval(loadReview, 15000);
+  </script>
+</body>
+</html>
