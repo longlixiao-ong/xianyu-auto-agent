@@ -568,23 +568,31 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                         user_url = f'https://www.goofish.com/personal?userId={user_id}'
                         logger.info(f'交易成功 {user_url} 等待卖家发货')
 
-                        # 提取商品 ID（递归查找所有层级）
+                        # 提取商品 ID（精确路径优先，再递归兜底）
                         order_item_id = None
                         try:
-                            def _find_item_id(obj, depth=0):
-                                if depth > 10 or not isinstance(obj, dict):
+                            msg3 = message.get("3") or {}
+                            # 精确路径优先
+                            order_item_id = str(msg3.get("itemId") or msg3.get("item_id") or "")
+                            if not order_item_id:
+                                ext = (msg3.get("extension") or msg3.get("extensions") or {})
+                                order_item_id = str(ext.get("itemId") or ext.get("item_id") or "")
+                            # 兜底递归查找（跳过泛型 id）
+                            if not order_item_id:
+                                def _find_item_id(obj, depth=0):
+                                    if depth > 6 or not isinstance(obj, dict):
+                                        return None
+                                    for key in ("itemId", "item_id"):
+                                        val = obj.get(key, "")
+                                        if val and str(val).isdigit():
+                                            return str(val)
+                                    for v in obj.values():
+                                        if isinstance(v, dict):
+                                            r = _find_item_id(v, depth + 1)
+                                            if r:
+                                                return r
                                     return None
-                                for key in ("itemId", "item_id", "id"):
-                                    val = obj.get(key, "")
-                                    if val and str(val).isdigit():
-                                        return str(val)
-                                for v in obj.values():
-                                    if isinstance(v, dict):
-                                        r = _find_item_id(v, depth + 1)
-                                        if r:
-                                            return r
-                                return None
-                            order_item_id = _find_item_id(message.get("3") or {})
+                                order_item_id = _find_item_id(msg3)
                         except Exception:
                             pass
 
@@ -1178,11 +1186,24 @@ if __name__ == '__main__':
     check_and_complete_env()
     
     cookies_str = os.getenv("COOKIES_STR")
-    bot = XianyuReplyBot()
-    xianyuLive = XianyuLive(cookies_str, bot=bot)
-    admin_service = AdminService(bot, xianyuLive, xianyuLive.cards_manager, env_path=".env", prompt_dir="prompts")
+    bot = None
+    xianyuLive = None
+    try:
+        bot = XianyuReplyBot()
+        xianyuLive = XianyuLive(cookies_str, bot=bot)
+    except Exception as e:
+        logger.warning(f"Bot 初始化失败（后台仍可用，请在后台填写配置后重新启动客服）: {e}")
+
+    cards_mgr = xianyuLive.cards_manager if xianyuLive else CardsManager()
+    admin_service = AdminService(bot, xianyuLive, cards_mgr, env_path=".env", prompt_dir="prompts")
     admin_port = int(os.getenv("ADMIN_PORT", "18061"))
     admin_host = os.getenv("ADMIN_HOST", "127.0.0.1")
     start_admin_server(admin_service, host=admin_host, port=admin_port, static_dir="admin_static")
     # 常驻进程
-    asyncio.run(xianyuLive.main())
+    if xianyuLive:
+        asyncio.run(xianyuLive.main())
+    else:
+        logger.warning("Bot 未初始化，仅管理后台运行。请在后台配置模型和 Cookie 后重启。")
+        import time as _time
+        while True:
+            _time.sleep(3600)

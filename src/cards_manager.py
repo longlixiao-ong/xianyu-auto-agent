@@ -245,6 +245,15 @@ class CardsManager:
             try:
                 with self._txn() as conn:
                     cursor = conn.cursor()
+                    # 检查是否已存在相同内容
+                    cursor.execute(
+                        "SELECT id FROM cards WHERE item_id = ? AND fields = ? AND used = 0",
+                        (item_id, fields_json)
+                    )
+                    if cursor.fetchone():
+                        skipped += 1
+                        skipped_lines.append(f"第{idx}行: 重复数据，已跳过")
+                        continue
                     cursor.execute(
                         "INSERT INTO cards (item_id, fields, created_at) VALUES (?, ?, ?)",
                         (item_id, fields_json, now)
@@ -379,6 +388,23 @@ class CardsManager:
             self._run_with_retry(_do)
         except Exception as e:
             logger.error(f"更新发货任务失败: {e}")
+
+    def reset_delivery_job(self, chat_id, item_id):
+        """重置发货任务状态为 pending，允许重新发货"""
+        def _do(conn):
+            c = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            c.execute(
+                "UPDATE delivery_jobs SET status='pending', error=NULL, updated_at=? "
+                "WHERE chat_id=? AND item_id=? AND status IN ('failed', 'pending')",
+                (now, chat_id, item_id)
+            )
+        try:
+            self._run_with_retry(_do)
+            return True
+        except Exception as e:
+            logger.error(f"重置发货任务失败: {e}")
+            return False
 
     # ── 消耗（后续自动回复集成用） ─────────────────
 

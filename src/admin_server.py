@@ -254,6 +254,12 @@ class AdminWSGIApp:
             return self._json_response(service.import_cards(payload))
         if path == "/api/cards/fixed-content":
             return self._json_response(service.update_fixed_content(payload))
+        if path == "/api/cards/reset-delivery":
+            chat_id = str(payload.get("chat_id", "")).strip()
+            item_id = str(payload.get("item_id", "")).strip()
+            if not chat_id or not item_id:
+                return self._json_response({"error": "chat_id_and_item_id_required"}, HTTPStatus.BAD_REQUEST)
+            return self._json_response(service.reset_delivery_job(chat_id, item_id))
         if path == "/api/review/update-status":
             review_id = payload.get("id")
             new_status = str(payload.get("status", "")).strip()

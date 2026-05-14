@@ -125,14 +125,17 @@ class AdminService:
         if not changed:
             return {"status": "no_changes", "changed": [], "effects": {}}
 
-        switched = self.bot.reload_runtime_config()
-        effects = {key: "hot_applied" for key in changed}
+        if self.bot:
+            switched = self.bot.reload_runtime_config()
+        else:
+            switched = False
+        effects = {key: "hot_applied" if switched else "saved" for key in changed}
 
         return {
-            "status": "hot_applied" if switched else "saved_not_applied",
+            "status": "hot_applied" if switched else "saved",
             "changed": changed,
             "effects": effects,
-            "message": "模型配置已热更新" if switched else "模型配置已保存，但热切换失败，仍运行旧模型",
+            "message": "模型配置已保存" + ("并热更新" if switched else "，重启后生效"),
         }
 
     def get_runtime_config(self):
@@ -143,22 +146,42 @@ class AdminService:
         }
 
     def update_runtime_config(self, payload):
-        updates = {
-            key: payload[key]
-            for key in RUNTIME_CONFIG_KEYS
-            if key in payload and str(payload[key]).strip() != ""
-        }
-        changed = self._write_env_values(updates)
-        if not changed:
+        updates = {}
+        # 整数参数校验
+        INT_KEYS = {"HEARTBEAT_INTERVAL", "HEARTBEAT_TIMEOUT", "TOKEN_REFRESH_INTERVAL",
+                    "TOKEN_RETRY_INTERVAL", "ITEMS_REFRESH_INTERVAL", "MANUAL_MODE_TIMEOUT",
+                    "MESSAGE_EXPIRE_TIME", "RISK_CONTROL_RETRY_INTERVAL"}
+        BOOL_KEYS = {"SIMULATE_HUMAN_TYPING", "MY_ITEMS_SNAPSHOT_ON_START",
+                     "SELLING_ITEMS_SNAPSHOT_ON_START", "SELLING_ITEMS_BROWSER_HEADLESS"}
+
+        for key in RUNTIME_CONFIG_KEYS:
+            if key not in payload or str(payload[key]).strip() == "":
+                continue
+            val = str(payload[key]).strip()
+            if key in INT_KEYS:
+                try:
+                    int(val)
+                except ValueError:
+                    raise ValueError(f"{key} 必须是整数，当前值: {val}")
+                if int(val) <= 0:
+                    raise ValueError(f"{key} 必须为正整数，当前值: {val}")
+            elif key in BOOL_KEYS:
+                if val.lower() not in ("true", "false"):
+                    raise ValueError(f"{key} 必须是 true 或 false，当前值: {val}")
+            updates[key] = val
+
+        if not updates:
             return {"status": "no_changes", "changed": [], "effects": {}}
 
-        self.live.reload_runtime_settings()
+        changed = self._write_env_values(updates)
+        if self.live:
+            self.live.reload_runtime_settings()
         effects = {key: "hot_applied" for key in changed}
         return {
-            "status": "hot_applied",
+            "status": "hot_applied" if self.live else "saved",
             "changed": changed,
             "effects": effects,
-            "message": "运行参数已保存并热更新",
+            "message": "运行参数已保存" + ("并热更新" if self.live else "，重启后生效"),
         }
 
     def get_all_prompts(self):
@@ -232,6 +255,16 @@ class AdminService:
         }
 
     def get_overview(self):
+        if not self.live:
+            return {
+                "live": {"service_state": "stopped", "service_message": "Bot 未初始化，请配置后重启", "service_enabled": False,
+                         "service_started_at": 0, "server_time": 0, "uptime_seconds": 0,
+                         "current_token_ready": False, "manual_mode_count": 0, "owned_item_count": 0},
+                "models": self.get_model_config(),
+                "secrets": self.get_secret_config(),
+                "runtime_status": {},
+                "snapshot": {"item_count": 0, "items": []},
+            }
         runtime_status = self.live.get_runtime_status_file()
         return {
             "live": self.live.get_status_snapshot(),
@@ -245,18 +278,28 @@ class AdminService:
         return {"items": ADMIN_LOG_BUFFER.list_entries(limit=limit)}
 
     def get_manual_review(self, status="pending"):
+        if not self.live:
+            return {"items": []}
         return {"items": self.live.context_manager.get_manual_review_items(status=status)}
 
     def update_manual_review_status(self, review_id, new_status):
+        if not self.live:
+            return {"success": False}
         return {"success": self.live.context_manager.update_manual_review_status(review_id, new_status)}
 
     def get_runtime_states(self, limit=50):
+        if not self.live:
+            return {"items": []}
         return {"items": self.live.context_manager.list_chat_runtime_states(limit=limit)}
 
     def get_recent_image_observations(self, limit=50):
+        if not self.live:
+            return {"items": []}
         return {"items": self.live.context_manager.list_recent_image_observations(limit=limit)}
 
     def start_service(self):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化，请先配置模型和 Cookie"}
         self.live.start_service()
         return {
             "status": "hot_applied",
@@ -265,6 +308,8 @@ class AdminService:
         }
 
     def stop_service(self):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化"}
         self.live.stop_service()
         return {
             "status": "hot_applied",
@@ -272,53 +317,66 @@ class AdminService:
             "message": "已停止客服",
         }
 
-    # ── 卡密管理 ─────────────────────────────────────
+    def reload_prompts(self):
+        if not self.bot:
+            return {"status": "error", "message": "Bot 未初始化"}
+        self.bot.reload_prompts()
+        return {"status": "hot_applied", "message": "提示词已重新加载"}
 
-    def get_virtual_items(self):
-        return {"items": self.cards_manager.list_virtual_items()}
+    def reload_runtime(self):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化"}
+        self.live.reload_runtime_settings()
+        return {"status": "hot_applied", "message": "运行参数已重新加载"}
 
-    def register_virtual_item(self, payload):
-        item_id = str(payload.get("item_id", "")).strip()
-        if not item_id:
-            raise ValueError("item_id 不能为空")
-        return self.cards_manager.register_virtual_item(
-            item_id,
-            label=str(payload.get("label", "")).strip(),
-            delivery_mode=str(payload.get("delivery_mode", "stock")).strip() or "stock",
-            fixed_content=str(payload.get("fixed_content", "")).strip(),
-        )
+    def update_cookie_config(self, payload):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化"}
+        cookie_value = str(payload.get("COOKIES_STR", "")).strip()
+        if not cookie_value:
+            raise ValueError("COOKIES_STR 不能为空")
+        changed = self._write_env_values({"COOKIES_STR": cookie_value})
+        self.live.update_cookie_string(cookie_value)
+        return {
+            "status": "saved",
+            "changed": changed or ["COOKIES_STR"],
+            "message": "Cookie 已写入 .env，请点击「启动客服」或重启容器使其生效。",
+        }
 
-    def update_fixed_content(self, payload):
-        item_id = str(payload.get("item_id", "")).strip()
-        if not item_id:
-            raise ValueError("item_id 不能为空")
-        return self.cards_manager.update_fixed_content(item_id, str(payload.get("content", "")))
+    def refresh_items(self):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化"}
+        payload = self.live.refresh_selling_items_snapshot()
+        snapshot = self.live.get_snapshot_status()
+        items = (payload or {}).get("items") or snapshot.get("items") or []
+        source = (payload or {}).get("metadata", {}).get("source", snapshot.get("path", "unknown"))
+        return {
+            "status": "hot_applied",
+            "message": f"商品列表已刷新 (来源: {source})",
+            "item_count": (payload or {}).get("item_count", snapshot.get("item_count", 0)),
+            "snapshot": snapshot,
+            "items": items[:20],
+        }
 
-    def unregister_virtual_item(self, payload):
-        item_id = str(payload.get("item_id", "")).strip()
-        if not item_id:
-            raise ValueError("item_id 不能为空")
-        return self.cards_manager.unregister_virtual_item(item_id)
-
-    def get_cards_stock(self, item_id=None):
-        return self.cards_manager.get_stock(item_id=item_id)
-
-    def get_cards_list(self, item_id=None, used=None, limit=200):
-        return self.cards_manager.list_cards(item_id=item_id, used=used, limit=limit)
-
-    def import_cards(self, payload):
-        item_id = str(payload.get("item_id", "")).strip()
-        if not item_id:
-            raise ValueError("item_id 不能为空")
-        raw_text = str(payload.get("raw_text", ""))
-        return self.cards_manager.import_cards(item_id, raw_text)
-
-    # ── 消息记录 ──────────────────────────────────────
+    def toggle_manual_mode(self, chat_id):
+        if not self.live:
+            return {"status": "error", "message": "Bot 未初始化"}
+        mode = self.live.toggle_manual_mode(chat_id)
+        return {
+            "status": "hot_applied",
+            "chat_id": chat_id,
+            "mode": mode,
+            "message": "已切到人工模式" if mode == "manual" else "已恢复自动回复",
+        }
 
     def get_conversations(self, item_id=None, limit=50, offset=0):
+        if not self.live:
+            return {"items": []}
         return {"items": self.live.context_manager.list_conversations(item_id=item_id, limit=limit, offset=offset)}
 
     def get_conversation_detail(self, chat_id, limit=200, offset=0):
+        if not self.live:
+            return {"messages": []}
         return {"messages": self.live.context_manager.get_conversation_detail(chat_id, limit=limit, offset=offset)}
 
     def get_delivery_log(self, item_id=None, limit=50):
@@ -329,3 +387,6 @@ class AdminService:
 
     def get_refund_stats(self, days=30):
         return self.cards_manager.get_refund_stats(days=days)
+
+    def reset_delivery_job(self, chat_id, item_id):
+        return {"success": self.cards_manager.reset_delivery_job(chat_id, item_id)}
