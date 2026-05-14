@@ -380,15 +380,16 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
 
     async def _auto_deliver(self, item_id, chat_id, user_url=""):
         """自动发货：检测虚拟商品并发送卡密。"""
-        # 检查是否已有发货记录，防止重复发货
-        if self.cards_manager.has_delivered(chat_id, item_id):
-            logger.info(f"跳过重复发货 chat={chat_id} item={item_id}")
+        # 使用 delivery_jobs 表保证发货任务唯一性
+        if not self.cards_manager.begin_delivery_job(chat_id, item_id):
+            logger.info(f"跳过重复发货任务 chat={chat_id} item={item_id}")
             return
 
         try:
             claimed = self.cards_manager.claim_one(item_id, chat_id)
         except Exception as e:
             logger.error(f"自动发货取卡异常 (item={item_id}): {e}")
+            self.cards_manager.update_delivery_job(chat_id, item_id, "failed", error=str(e))
             self.enqueue_handoff(
                 chat_id=chat_id,
                 item_id=item_id,
@@ -444,8 +445,10 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
             await self.send_msg(self.ws, chat_id, chat_id, delivery_text)
             if mode == "stock" and claimed.get("id"):
                 self.cards_manager.mark_delivery_status(claimed["id"], True)
+                self.cards_manager.update_delivery_job(chat_id, item_id, "success", card_id=claimed["id"])
             elif mode == "fixed":
                 self.cards_manager.record_fixed_delivery(item_id, chat_id, True)
+                self.cards_manager.update_delivery_job(chat_id, item_id, "success")
             logger.info(
                 f"自动发货成功 item={item_id} chat={chat_id} "
                 f"mode={mode} user_url={user_url}"
@@ -454,8 +457,10 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
             logger.error(f"自动发货发送失败 (item={item_id}): {e}")
             if mode == "stock" and claimed.get("id"):
                 self.cards_manager.mark_delivery_status(claimed["id"], False)
+                self.cards_manager.update_delivery_job(chat_id, item_id, "failed", card_id=claimed["id"], error=str(e))
             elif mode == "fixed":
                 self.cards_manager.record_fixed_delivery(item_id, chat_id, False)
+                self.cards_manager.update_delivery_job(chat_id, item_id, "failed", error=str(e))
             if mode == "stock":
                 self.enqueue_handoff(
                     chat_id=chat_id,
@@ -488,6 +493,8 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
             "service_enabled": self.service_enabled,
             "service_state": self.service_state,
             "service_message": self.service_message,
+            "service_started_at": self._service_started_at,
+            "server_time": time.time(),
             "uptime_seconds": int(time.time() - self._service_started_at) if self._service_started_at else 0,
         }
 
@@ -1024,7 +1031,6 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                 logger.error(f"Cookie 无效: {e}")
                 logger.info(f"等待 {wait_seconds} 秒或收到启动信号后重试，请更新 .env 中的 COOKIES_STR")
                 self._update_service_state("blocked", str(e))
-                self._service_started_at = 0.0
                 if self.retry_signal:
                     self.retry_signal.clear()
                     try:
@@ -1036,7 +1042,6 @@ class XianyuLive(MessageClassifierMixin, ItemOwnershipMixin, ManualModeMixin):
                 logger.error(f"风控阻塞: {e}")
                 logger.info(f"等待 {wait_seconds} 秒后重试，请先更新 .env 中的 COOKIES_STR")
                 self._update_service_state("blocked", "风控拦截，请更新 Cookie 后重新启动客服")
-                self._service_started_at = 0.0
                 if self.retry_signal:
                     self.retry_signal.clear()
                     try:
@@ -1174,6 +1179,6 @@ if __name__ == '__main__':
     xianyuLive = XianyuLive(cookies_str, bot=bot)
     admin_service = AdminService(bot, xianyuLive, xianyuLive.cards_manager, env_path=".env", prompt_dir="prompts")
     admin_port = int(os.getenv("ADMIN_PORT", "18061"))
-    start_admin_server(admin_service, host="127.0.0.1", port=admin_port, static_dir="admin_static")
+    start_admin_server(admin_service, host="0.0.0.0", port=admin_port, static_dir="admin_static")
     # 常驻进程
     asyncio.run(xianyuLive.main())

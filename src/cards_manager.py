@@ -77,6 +77,22 @@ class CardsManager:
         if 'refund_status' not in card_cols:
             cursor.execute("ALTER TABLE cards ADD COLUMN refund_status INTEGER DEFAULT 0")
 
+        # 发货任务表，保证 chat_id + item_id 唯一
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS delivery_jobs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id    TEXT NOT NULL,
+            item_id    TEXT NOT NULL,
+            mode       TEXT,
+            status     TEXT NOT NULL DEFAULT 'pending',
+            card_id    INTEGER,
+            error      TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(chat_id, item_id)
+        )
+        ''')
+
         conn.commit()
         conn.close()
         logger.debug("卡密数据库表初始化完成")
@@ -85,23 +101,43 @@ class CardsManager:
         return sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
 
     @contextmanager
-    def _txn(self, retries=3):
+    def _read_txn(self):
+        """读操作事务，不加写锁"""
         conn = self._connect()
-        for attempt in range(retries):
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-                yield conn
-                conn.commit()
-                break
-            except sqlite3.OperationalError as e:
-                if "locked" in str(e) and attempt < retries - 1:
-                    conn.rollback()
-                    time.sleep(0.1 * (attempt + 1))
-                else:
-                    conn.rollback()
-                    raise
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            yield conn
         finally:
             conn.close()
+
+    @contextmanager
+    def _txn(self):
+        """写操作事务，使用 BEGIN IMMEDIATE"""
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("BEGIN IMMEDIATE")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def _run_with_retry(self, fn, retries=3):
+        """带重试的写操作执行"""
+        last_error = None
+        for attempt in range(retries):
+            try:
+                with self._txn() as conn:
+                    return fn(conn)
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if "locked" not in str(e).lower() or attempt == retries - 1:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
+        raise last_error
 
     # ── 虚拟商品注册 ──────────────────────────────
 
@@ -137,7 +173,7 @@ class CardsManager:
 
     def list_virtual_items(self):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT v.item_id, v.label, v.delivery_mode, v.fixed_content, "
@@ -235,7 +271,7 @@ class CardsManager:
 
     def get_stock(self, item_id=None):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 if item_id:
                     cursor.execute(
@@ -272,7 +308,7 @@ class CardsManager:
 
     def list_cards(self, item_id=None, used=None, limit=200):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 conditions = []
                 params = []
@@ -310,6 +346,39 @@ class CardsManager:
         except Exception as e:
             logger.error(f"获取卡密列表失败: {e}")
             return {"items": []}
+
+    # ── 发货任务管理 ─────────────────────────────
+
+    def begin_delivery_job(self, chat_id, item_id):
+        """创建发货任务，返回 True 表示成功，False 表示重复"""
+        try:
+            def _do(conn):
+                c = conn.cursor()
+                now = datetime.now(timezone.utc).isoformat()
+                c.execute(
+                    "INSERT INTO delivery_jobs (chat_id, item_id, status, created_at, updated_at) "
+                    "VALUES (?, ?, 'pending', ?, ?)",
+                    (chat_id, item_id, now, now)
+                )
+            self._run_with_retry(_do)
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def update_delivery_job(self, chat_id, item_id, status, card_id=None, error=None):
+        """更新发货任务状态"""
+        def _do(conn):
+            c = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            c.execute(
+                "UPDATE delivery_jobs SET status=?, card_id=?, error=?, updated_at=? "
+                "WHERE chat_id=? AND item_id=?",
+                (status, card_id, error, now, chat_id, item_id)
+            )
+        try:
+            self._run_with_retry(_do)
+        except Exception as e:
+            logger.error(f"更新发货任务失败: {e}")
 
     # ── 消耗（后续自动回复集成用） ─────────────────
 
@@ -397,7 +466,7 @@ class CardsManager:
     def has_delivered(self, chat_id, item_id):
         """检查该 chat_id 对 item_id 是否已有发货成功或发货中的记录"""
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 c = conn.cursor()
                 c.execute(
                     "SELECT COUNT(*) FROM cards WHERE chat_id = ? AND item_id = ? AND used = 1 AND delivery_status IN (0, 1)",
@@ -471,7 +540,7 @@ class CardsManager:
         try:
             from datetime import datetime, timedelta, timezone
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT COUNT(*) as total, "
@@ -490,7 +559,7 @@ class CardsManager:
 
     def list_delivery_log(self, item_id=None, limit=50):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 if item_id:
                     cursor.execute(
@@ -536,7 +605,7 @@ class CardsManager:
         try:
             from datetime import datetime, timedelta, timezone
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 # 每日发货统计
                 cursor.execute(

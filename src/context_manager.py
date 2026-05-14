@@ -154,23 +154,43 @@ class ChatContextManager:
         return sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
 
     @contextmanager
-    def _txn(self, retries=3):
+    def _read_txn(self):
+        """读操作事务，不加写锁"""
         conn = self._connect()
-        for attempt in range(retries):
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-                yield conn
-                conn.commit()
-                break
-            except sqlite3.OperationalError as e:
-                if "locked" in str(e) and attempt < retries - 1:
-                    conn.rollback()
-                    time.sleep(0.1 * (attempt + 1))
-                else:
-                    conn.rollback()
-                    raise
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            yield conn
         finally:
             conn.close()
+
+    @contextmanager
+    def _txn(self):
+        """写操作事务，使用 BEGIN IMMEDIATE"""
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("BEGIN IMMEDIATE")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def _run_with_retry(self, fn, retries=3):
+        """带重试的写操作执行"""
+        last_error = None
+        for attempt in range(retries):
+            try:
+                with self._txn() as conn:
+                    return fn(conn)
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if "locked" not in str(e).lower() or attempt == retries - 1:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
+        raise last_error
         
 
             
@@ -200,7 +220,7 @@ class ChatContextManager:
     
     def get_item_info(self, item_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT data FROM items WHERE item_id = ?", (item_id,))
                 result = cursor.fetchone()
@@ -237,7 +257,7 @@ class ChatContextManager:
 
     def get_context_by_chat(self, chat_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -277,7 +297,7 @@ class ChatContextManager:
 
     def get_bargain_count_by_chat(self, chat_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT count FROM chat_bargain_counts WHERE chat_id = ?", (chat_id,))
                 result = cursor.fetchone()
@@ -306,7 +326,7 @@ class ChatContextManager:
 
     def get_image_observation_by_chat(self, chat_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -370,7 +390,7 @@ class ChatContextManager:
 
     def get_chat_runtime_state(self, chat_id):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -436,7 +456,7 @@ class ChatContextManager:
 
     def get_manual_review_items(self, status="pending"):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -477,7 +497,7 @@ class ChatContextManager:
 
     def list_chat_runtime_states(self, limit=50):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -505,7 +525,7 @@ class ChatContextManager:
 
     def list_recent_image_observations(self, limit=50):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -532,7 +552,7 @@ class ChatContextManager:
 
     def list_conversations(self, item_id=None, limit=50, offset=0):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 if item_id:
                     cursor.execute(
@@ -576,7 +596,7 @@ class ChatContextManager:
 
     def get_conversation_detail(self, chat_id, limit=200, offset=0):
         try:
-            with self._txn() as conn:
+            with self._read_txn() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT role, content, timestamp FROM messages "

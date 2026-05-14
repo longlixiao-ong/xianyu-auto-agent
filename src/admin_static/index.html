@@ -735,9 +735,9 @@
         </div>`;
     }
 
-    let uptimeAnchor = { seconds: 0, at: Date.now(), running: false };
+    let serviceStartedAt = 0;
+    let serverClientOffset = 0;
     let uptimeTimer = null;
-    let wasRunning = false;
 
     function formatUptime(seconds) {
       if (seconds < 1) return "0秒";
@@ -749,12 +749,16 @@
       return d > 0 ? `${d}天${h}时${m}分` : `${h}时${m}分`;
     }
 
-    function uptimeTicker() {
-      if (!uptimeAnchor.running) return;
-      const elapsed = Math.floor((Date.now() - uptimeAnchor.at) / 1000);
-      const total = uptimeAnchor.seconds + elapsed;
+    function renderUptime() {
       const el = document.getElementById("uptime-card");
-      if (el) el.textContent = formatUptime(total);
+      if (!el) return;
+      if (!serviceStartedAt) {
+        el.textContent = "未运行";
+        return;
+      }
+      const now = Date.now() / 1000 + serverClientOffset;
+      const seconds = Math.max(0, Math.floor(now - serviceStartedAt));
+      el.textContent = formatUptime(seconds);
     }
 
     function renderOverview(data) {
@@ -766,6 +770,12 @@
       const riskBlocked = (runtime.status || "") === "risk_control_blocked";
       const cookieCard = document.getElementById("cookie-card");
       if (cookieCard) cookieCard.classList.toggle("risk-highlight", riskBlocked);
+
+      // 计算服务器时间偏移量
+      serviceStartedAt = Number(live.service_started_at || 0);
+      if (live.server_time) {
+        serverClientOffset = Number(live.server_time) - Date.now() / 1000;
+      }
 
       const hbStr = live.last_heartbeat_response;
       const hbDt = parseLocalDateTime(hbStr);
@@ -786,17 +796,10 @@
       cards.push(cardHtml("box", "商品数", escapeHtml(String(snapshot.item_count ?? 0)), "neutral", ""));
       cards.push(cardHtml("shield", "风险状态", escapeHtml(riskLabel), riskBlocked ? "danger" : "ok", riskBlocked ? "danger-text" : ""));
 
-      const uptime = live.uptime_seconds || 0;
       const isRunning = live.service_state === "running";
-      // 服务重启（从停止变为运行）时重置锚点
-      if (isRunning && !wasRunning) {
-        uptimeAnchor = { seconds: 0, at: Date.now(), running: true };
-      } else {
-        uptimeAnchor = { seconds: uptime, at: Date.now(), running: isRunning };
-      }
-      wasRunning = isRunning;
-      if (!uptimeTimer) uptimeTimer = setInterval(uptimeTicker, 1000);
-      cards.push(cardHtml("clock", "运行时长", `<span id="uptime-card">${escapeHtml(formatUptime(uptime))}</span>`, isRunning ? "ok" : "neutral", ""));
+      if (!uptimeTimer) uptimeTimer = setInterval(renderUptime, 1000);
+      renderUptime();
+      cards.push(cardHtml("clock", "运行时长", `<span id="uptime-card">${escapeHtml(formatUptime(live.uptime_seconds || 0))}</span>`, isRunning ? "ok" : "neutral", ""));
 
       document.getElementById("overview-cards").innerHTML = cards.join("");
 
