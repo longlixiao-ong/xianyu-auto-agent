@@ -1182,6 +1182,7 @@ if __name__ == '__main__':
     xianyuLive = XianyuLive(cookies_str, bot=bot)
     admin_service = AdminService(bot, xianyuLive, xianyuLive.cards_manager, env_path=".env", prompt_dir="prompts")
     admin_port = int(os.getenv("ADMIN_PORT", "18061"))
-    start_admin_server(admin_service, host="0.0.0.0", port=admin_port, static_dir="admin_static")
+    admin_host = os.getenv("ADMIN_HOST", "127.0.0.1")
+    start_admin_server(admin_service, host=admin_host, port=admin_port, static_dir="admin_static")
     # 常驻进程
     asyncio.run(xianyuLive.main())

@@ -33,15 +33,22 @@ class AdminWSGIApp:
             # OPTIONS 预检请求
             if method == "OPTIONS":
                 status, headers, body = self._handle_options()
-            # 所有请求不鉴权（本地 127.0.0.1 已足够安全）
+            # GET 请求不鉴权（本地访问足够安全）
             elif method == "GET":
                 status, headers, body = self._handle_get(path, query)
-            elif method == "PUT":
-                payload = self._read_body(environ)
-                status, headers, body = self._handle_put(path, payload)
-            elif method == "POST":
-                payload = self._read_body(environ)
-                status, headers, body = self._handle_post(path, payload)
+            # PUT/POST 写操作需要鉴权
+            elif method in ("PUT", "POST"):
+                ok, code, msg = self._check_auth(environ)
+                if not ok:
+                    status, headers, body = self._json_response(
+                        {"error": code, "message": msg}, HTTPStatus.UNAUTHORIZED
+                    )
+                elif method == "PUT":
+                    payload = self._read_body(environ)
+                    status, headers, body = self._handle_put(path, payload)
+                else:
+                    payload = self._read_body(environ)
+                    status, headers, body = self._handle_post(path, payload)
             else:
                 status, headers, body = self._json_response(
                     {"error": "method_not_allowed"}, HTTPStatus.METHOD_NOT_ALLOWED
@@ -257,7 +264,7 @@ class AdminWSGIApp:
         return self._json_response({"error": "not_found"}, HTTPStatus.NOT_FOUND)
 
 
-def start_admin_server(service, host="0.0.0.0", port=18061, static_dir="admin_static"):
+def start_admin_server(service, host="127.0.0.1", port=18061, static_dir="admin_static"):
     """启动管理后台服务器（使用 waitress）"""
     app = AdminWSGIApp(service, static_dir)
 
